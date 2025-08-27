@@ -3,6 +3,8 @@ const urlsToCache = [
   '/',
   '/index.html',
   '/manifest.json',
+  '/icon-192x192.png', // Thêm dòng này
+  '/icon-512x512.png', // Thêm dòng này
   // Các tệp CSS, JS và font từ CDN
   'https://cdn.tailwindcss.com',
   'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap',
