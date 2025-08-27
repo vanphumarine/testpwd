@@ -1,0 +1,3675 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Project Tracker Realtime</title>
+    <!-- Tailwind CSS CDN to use utility classes -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts - Inter for modern interface -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js CDN for plotting charts -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        /* Basic CSS for font and background color */
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6; /* Light gray background */
+        }
+        /* Minimum height for Kanban columns to ensure visual consistency */
+        .kanban-column {
+            min-height: 400px;
+            max-height: calc(100vh - 280px); /* Adjust based on header/footer height */
+            overflow-y: auto; /* Enable independent vertical scrolling */
+            padding-right: 1rem; /* Add padding for scrollbar visibility */
+        }
+        /* Styling for the scrollbar */
+        .kanban-column::-webkit-scrollbar {
+            width: 8px; /* Width of the scrollbar */
+        }
+
+        .kanban-column::-webkit-scrollbar-track {
+            background: #e0e0e0; /* Track color */
+            border-radius: 4px;
+        }
+
+        .kanban-column::-webkit-scrollbar-thumb {
+            background-color: #a0a0a0; /* Thumb color */
+            border-radius: 4px;
+            border: 2px solid #e0e0e0; /* Padding around thumb */
+        }
+
+        .kanban-column::-webkit-scrollbar-thumb:hover {
+            background-color: #808080; /* Darker thumb on hover */
+        }
+
+        /* Task card styling and hover effects for admin */
+        .task-card {
+            transition: all 0.2s ease-in-out; /* Smooth transition on drag/hover */
+            /* border-left-width: 8px; /* Adjusted dynamically, so remove static */
+            border-width: 1px; /* Add a subtle border on all sides for consistency */
+        }
+        .task-card.is-admin {
+            cursor: grab; /* Indicates draggable for admin */
+        }
+        .task-card.is-admin:hover {
+            transform: translateY(-2px); /* Slightly lift on hover */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* Soft shadow on hover */
+        }
+        /* Styling for the task card being dragged */
+        .task-card.dragging {
+            opacity: 0.5; /* Fade out */
+            transform: rotate(3deg); /* Rotate slightly */
+        }
+        /* Highlight drop location when dragging/dropping task */
+        .task-card.drag-over-target {
+            border: 2px dashed #6366f1; /* Purple dashed border */
+            padding-top: 2rem; /* Create space at the top to indicate insertion point */
+            padding-bottom: 2rem; /* Create space at the bottom */
+        }
+        .kanban-column.drag-over-empty {
+            border: 2px dashed #6366f1; /* Dashed border for empty column */
+        }
+
+        /* Container for confetti celebration effect */
+        #confetti-container {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; /* Allow interaction with elements below */
+            overflow: hidden; /* Hide overflowing confetti */
+            z-index: 9999; /* Ensure it's on top */
+        }
+        /* Styling and animation for each confetti piece */
+        .confetti {
+            position: absolute;
+            width: 10px; height: 10px;
+            background-color: #f00; /* Default red, will be overridden */
+            opacity: 0; /* Start invisible */
+            animation: fall 4s linear forwards; /* Falling animation */
+        }
+        /* Keyframe animation for falling confetti */
+        @keyframes fall {
+            0% { transform: translateY(0) rotate(0deg); opacity: 1; } /* Start from top, visible */
+            100% { transform: translateY(100vh) rotate(720deg); opacity: 0; } /* Fall to bottom, fade out */
+        }
+        /* Modal backdrop for overlay effect */
+        .modal-backdrop {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background-color: rgba(0,0,0,0.5); /* Semi-transparent black overlay */
+            display: flex; justify-content: center; align-items: center; /* Center content */
+            z-index: 10000; /* Ensure it's on top of all other elements */
+        }
+        /* Modal content box styling */
+        .modal-content {
+            background-color: white; padding: 2rem; border-radius: 0.5rem;
+            box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); /* Large shadow */
+            text-align: center;
+        }
+        /* Modal button styling */
+        .modal-button {
+            margin-top: 1.5rem; padding: 0.5rem 1.5rem; border-radius: 0.375rem;
+            background-color: #4f46e5; color: white; font-weight: 500; cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .modal-button:hover {
+            background-color: #4338ca; /* Darker on hover */
+        }
+        /* Notification Toast */
+        .toast-notification {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background-color: #333;
+            color: white;
+            padding: 15px 20px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+            /* Initial state: hidden and collapsed */
+            opacity: 0;
+            visibility: hidden;
+            transform: translateX(calc(100% + 20px)); /* Start completely off-screen */
+            transition: opacity 0.5s ease-in-out, visibility 0.5s ease-in-out, transform 0.5s ease-in-out;
+            z-index: 11000; /* Higher than modals */
+            display: flex; /* Use flexbox for layout */
+            flex-direction: column; /* Stack content vertically */
+            align-items: flex-start; /* Align content to the start */
+            max-width: 300px; /* Limit width */
+            cursor: pointer; /* Indicate it's clickable even when collapsed */
+        }
+        .toast-notification.show {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(0); /* Fully visible and expanded */
+        }
+        /* Collapsed state for the toast when it is shown */
+        .toast-notification.show.collapsed {
+            transform: translateX(calc(100% - 40px)); /* Shift left to hide most content */
+            opacity: 0.7; /* Keep it semi-transparent when collapsed */
+        }
+        .toast-notification .toast-content {
+            display: block;
+            max-height: 100px; /* Max height for content when expanded */
+            overflow: hidden;
+            transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out, padding 0.3s ease-in-out;
+            width: 100%; /* Ensure content takes full width when expanded */
+        }
+        .toast-notification.show.collapsed .toast-content {
+            max-height: 0; /* Collapse content */
+            opacity: 0;
+            padding: 0;
+        }
+        .toast-notification .toggle-button {
+            background: none;
+            border: none;
+            color: white;
+            cursor: pointer;
+            font-size: 1.2rem;
+            padding: 0;
+            align-self: flex-end; /* Align button to the right within the flex container */
+            transition: transform 0.3s ease-in-out;
+        }
+        .toast-notification.show.collapsed .toggle-button {
+            transform: rotate(180deg); /* Rotate arrow when collapsed */
+        }
+
+
+        /* Subtask drag-over effect */
+        .subtask-item.drag-over-subtask {
+            border-bottom: 2px dashed #6366f1; /* Purple dashed border */
+            padding-bottom: 0.5rem;
+        }
+
+        /* NEW: Styles for comment and note action buttons */
+        .comment-note-actions {
+            display: flex;
+            gap: 4px; /* Space between buttons */
+            position: absolute; /* Position relative to parent */
+            top: 2px; /* Adjust as needed */
+            right: 2px; /* Adjust as needed */
+        }
+        .comment-note-actions button {
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 0.875rem; /* text-sm */
+            line-height: 1;
+            padding: 4px; /* p-1 */
+            border-radius: 0.25rem; /* rounded */
+            transition: background-color 0.1s ease-in-out;
+        }
+        .comment-note-actions button:hover {
+            background-color: rgba(255, 255, 255, 0.2); /* Light hover effect */
+        }
+        .comment-note-actions .delete-button {
+            color: #ef4444; /* red-500 */
+        }
+        .comment-note-actions .delete-button:hover {
+            color: #dc2626; /* red-600 */
+        }
+        .comment-note-actions .edit-button {
+            color: #9ca3af; /* gray-400 */
+        }
+        .comment-note-actions .edit-button:hover {
+            color: #6b7280; /* gray-600 */
+        }
+
+        /* Custom styles for the countdown timer inspired by the image */
+        .countdown-card {
+            width: 128px; /* w-32 */
+            height: 128px; /* h-32 */
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background-color: white;
+            border-radius: 0.75rem; /* rounded-xl */
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05); /* shadow-lg */
+            border: 1px solid #e5e7eb; /* border border-gray-200 */
+            overflow: hidden;
+            position: relative;
+            font-family: 'Inter', sans-serif; /* Ensure Inter font */
+        }
+
+        .countdown-card .header-text {
+            position: absolute;
+            top: 0;
+            width: 100%;
+            background-image: linear-gradient(to right, #3b82f6, #60a5fa); /* blue-600 to blue-400 */
+            color: white;
+            font-size: 0.75rem; /* text-xs */
+            font-weight: 600; /* font-semibold */
+            text-transform: uppercase;
+            padding: 0.375rem 0; /* py-1.5 */
+            text-align: center;
+            border-top-left-radius: 0.75rem;
+            border-top-right-radius: 0.75rem;
+        }
+
+        .countdown-card .days-value {
+            font-size: 3rem; /* text-5xl */
+            font-weight: 300; /* font-light */
+            color: #374151; /* gray-800 */
+            margin-top: 1rem; /* mt-4 */
+        }
+
+        /* NEW: Styles for subtask reaction buttons on hover */
+        .subtask-reactions-container {
+            position: absolute; /* Positioned relative to .subtask-item */
+            bottom: 2px; /* Adjust as needed */
+            left: 50%; /* Centered horizontally */
+            transform: translateX(-50%); /* Pull back by half its width to truly center */
+            display: flex; /* Always flex for layout */
+            align-items: center;
+            gap: 4px;
+            background-color: rgba(255, 255, 255, 0.9); /* Slightly transparent background */
+            padding: 4px 8px; /* Padding around buttons */
+            border-radius: 1rem; /* pill shape */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1); /* Subtle shadow */
+            transition: all 0.2s ease-in-out;
+            opacity: 0; /* Start hidden */
+            pointer-events: none; /* Prevent interaction when hidden */
+            z-index: 5; /* Ensure it's above normal content but below admin buttons */
+        }
+
+        .subtask-item:hover .subtask-reactions-container {
+            opacity: 1; /* Fully visible on hover */
+            pointer-events: auto; /* Enable interaction on hover */
+        }
+
+        .subtask-reactions-container .reaction-button {
+            position: relative; /* For tooltip positioning */
+            font-size: 0.875rem; /* text-sm */
+            padding: 4px 8px; /* py-1 px-2 */
+            border-radius: 9999px; /* rounded-full */
+            cursor: pointer;
+            transition: background-color 0.1s ease-in-out, transform 0.1s ease-in-out;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            white-space: nowrap; /* Keep text on one line */
+        }
+
+        .subtask-reactions-container .reaction-button:hover {
+            transform: translateY(-1px); /* Little lift on hover */
+        }
+
+        /* Styles for active/inactive reactions */
+        .subtask-reactions-container .reaction-button.reacted {
+            background-color: #bfdbfe; /* blue-200 */
+            border: 1px solid #93c5fd; /* blue-300 */
+            color: #1e40af; /* blue-800 */
+        }
+
+        .subtask-reactions-container .reaction-button.not-reacted {
+            background-color: #e5e7eb; /* gray-200 */
+            border: 1px solid #d1d5db; /* gray-300 */
+            color: #4b5563; /* gray-700 */
+        }
+        
+        /* Reaction tooltip styles */
+        .reaction-tooltip {
+            position: absolute;
+            bottom: calc(100% + 5px); /* Position above the button */
+            left: 50%;
+            transform: translateX(-50%);
+            background-color: #333;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 0.75rem; /* text-xs */
+            white-space: normal; /* Allow text to wrap */
+            text-align: center;
+            max-width: 150px; /* Limit width */
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.2s ease-in-out, visibility 0.2s ease-in-out;
+            z-index: 10; /* Ensure it's above other elements */
+        }
+
+        .reaction-tooltip::after {
+            content: '';
+            position: absolute;
+            left: 50%;
+            bottom: -5px; /* Position below for a caret effect */
+            transform: translateX(-50%) rotate(45deg);
+            width: 10px;
+            height: 10px;
+            background-color: #333;
+        }
+
+        .reaction-button:hover .reaction-tooltip {
+            opacity: 1;
+            visibility: visible;
+        }
+
+    </style>
+</head>
+<body class="antialiased text-gray-800">
+
+    <!-- Login Screen -->
+    <div id="login-screen" class="min-h-screen flex items-center justify-center bg-gray-100">
+        <div class="bg-white p-8 rounded-lg shadow-lg max-w-md w-full text-center">
+            <h2 class="text-3xl font-bold mb-6 text-gray-900">Welcome to Project Tracker Realtime</h2>
+            <p class="text-gray-600 mb-6">Choose how you want to access the application.</p>
+            
+            <div class="mb-6">
+                <h3 class="text-xl font-semibold mb-4 text-gray-800">Login</h3>
+                <input type="email" id="admin-email" placeholder="Email" class="w-full p-3 mb-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <input type="password" id="admin-password" placeholder="Password" class="w-full p-3 mb-4 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500">
+                <button id="admin-login-btn" class="w-full bg-indigo-600 text-white font-semibold py-3 px-6 rounded-md hover:bg-indigo-700 transition-colors duration-300">Login</button>
+            </div>
+
+            <!-- Removed Viewer Access section -->
+            <!--
+            <div class="border-t border-gray-200 pt-6">
+                <h3 class="text-xl font-semibold mb-4 text-gray-800">Viewer Access</h3>
+                <button id="guest-login-btn" class="w-full bg-green-600 text-white font-semibold py-3 px-6 rounded-md hover:bg-green-700 transition-colors duration-300">Continue as Guest</button>
+            </div>
+            -->
+        </div>
+    </div>
+
+    <!-- Main Kanban App (initially hidden) -->
+    <div id="app" class="p-4 md:p-8 min-h-screen hidden">
+        <header class="text-center mb-4">
+            <h1 class="text-4xl md:text-5xl font-bold text-gray-900">Project Tracker Realtime</h1>
+        </header>
+
+        <!-- Top Controls: Project Selection/Creation & Auth Info -->
+        <div class="flex flex-col md:flex-row items-center justify-between gap-2 mb-4 max-w-full mx-auto">
+            <!-- Left: Project Selection and Label -->
+            <div class="flex items-center gap-2 flex-wrap justify-center md:justify-start">
+                <label for="project-select" class="text-lg font-medium text-gray-700 whitespace-nowrap">Select Project:</label>
+                <select id="project-select" class="p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition max-w-xs w-full md:w-auto">
+                    <option value="">Select a Project</option>
+                </select>
+                <button id="create-project-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors duration-300">Create New Project</button>
+            </div>
+            
+            <!-- Right: Auth Info & Logout Button -->
+            <div id="auth-info" class="text-sm text-gray-500 flex flex-row items-center gap-2 flex-wrap justify-center md:justify-end mt-2 md:mt-0">
+                <!-- Changed to display nickname -->
+                <p>User: <span class="font-bold text-gray-800" id="display-user-id"></span></p>
+                <p>Your Role: <span class="font-bold" id="display-user-role"></span></p>
+                <!-- NEW: Change Password Button -->
+                <button id="recent-events-btn" class="bg-indigo-500 text-white text-sm px-3 py-1 rounded-md hover:bg-indigo-600 transition-colors duration-300">Recent Events</button>
+                <button id="change-password-btn" class="bg-blue-500 text-white text-sm px-3 py-1 rounded-md hover:bg-blue-600 transition-colors duration-300">Change Password</button>
+                <button id="logout-btn" class="bg-red-500 text-white text-sm px-3 py-1 rounded-md hover:bg-red-600 transition-colors duration-300">Logout</button>
+            </div>
+        </div>
+
+        <!-- Project Details and Add Task Form - Now stacked vertically (flex-col) and centered with max-width -->
+        <div class="flex flex-col gap-4 mb-4 max-w-full mx-auto">
+            <!-- Current Project Details Display -->
+            <div id="current-project-details" class="w-full bg-blue-100 p-4 rounded-lg shadow-md hidden text-left border-l-4 border-blue-500 flex flex-wrap items-start justify-between">
+                <div class="flex-grow">
+                    <h2 class="text-2xl font-bold text-blue-800 mb-2" id="display-project-name"></h2>
+                    <p class="text-gray-700 mb-3" id="display-project-description"></p>
+                    
+                    <!-- Updated layout for project details -->
+                    <div class="flex flex-col gap-1 text-sm text-gray-600">
+                        <div class="flex items-center gap-1">
+                            <strong class="text-blue-700">Start Date:</strong>
+                            <span id="display-project-start-date"></span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <strong class="text-blue-700">End Date:</strong>
+                            <span id="display-project-end-date"></span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <strong class="text-blue-700">Status:</strong>
+                            <span id="display-project-status" class="font-semibold"></span>
+                        </div>
+                        <div class="flex items-center gap-1">
+                            <strong class="text-blue-700">Members:</strong>
+                            <span id="display-project-members" class="font-semibold"></span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Countdown Timer -->
+                <div id="countdown-timer" class="mt-4 sm:mt-0 ml-0 sm:ml-4 hidden">
+                    <div class="countdown-card">
+                        <div class="header-text">
+                            Days Until Seatrial
+                        </div>
+                        <div id="countdown-days-value" class="days-value">0</div>
+                    </div>
+                </div>
+
+                <!-- Action buttons for project, displayed based on permissions -->
+                <div class="w-full text-right mt-3 flex justify-end gap-2">
+                    <button id="edit-project-btn" class="bg-blue-500 text-white font-semibold py-2 px-3 rounded-md hover:bg-blue-600 transition-colors duration-300">Edit Project</button>
+                    <button id="manage-members-btn" class="bg-purple-500 text-white font-semibold py-2 px-3 rounded-md hover:bg-purple-600 transition-colors duration-300">Manage Members</button>
+                    <button id="delete-project-btn" class="bg-red-500 text-white font-semibold py-2 px-3 rounded-md hover:bg-red-600 transition-colors duration-300">Delete Project</button>
+                </div>
+            </div>
+
+            <!-- Form to add new task -->
+            <div id="add-task-container" class="w-full bg-white p-4 rounded-lg shadow-md">
+                <h2 class="text-xl font-semibold mb-3">Add New Task</h2>
+                <form id="add-task-form" class="flex flex-col gap-3">
+                    <input type="text" id="task-input" placeholder="Enter a new task..." class="flex-grow p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition" required>
+                    
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <div class="flex items-center gap-1 flex-grow">
+                            <label for="task-deadline-input" class="text-gray-700 whitespace-nowrap text-sm">Deadline:</label>
+                            <input type="date" id="task-deadline-input" class="flex-grow p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition text-sm">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors duration-300">Add Task</button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Main Kanban board layout -->
+        <main class="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 w-full mx-auto">
+            <!-- To Do column -->
+            <div id="todo" data-status="todo" class="kanban-column bg-white/50 backdrop-blur-sm rounded-xl shadow-lg p-4">
+                <h3 class="text-xl font-bold text-gray-700 mb-4 border-b-4 border-red-400 pb-2">To Do</h3>
+                <div id="todo-tasks" class="task-list space-y-4 min-h-[200px]"></div>
+            </div>
+            <!-- In Progress column -->
+            <div id="inprogress" data-status="inprogress" class="kanban-column bg-white/50 backdrop-blur-sm rounded-xl shadow-lg p-4">
+                <h3 class="text-xl font-bold text-gray-700 mb-4 border-b-4 border-yellow-400 pb-2">In Progress</h3>
+                <div id="inprogress-tasks" class="task-list space-y-4 min-h-[200px]"></div>
+            </div>
+            <!-- Done column -->
+            <div id="done" data-status="done" class="kanban-column bg-white/50 backdrop-blur-sm rounded-xl shadow-lg p-4">
+                <h3 class="text-xl font-bold text-gray-700 mb-4 border-b-4 border-green-400 pb-2">Done</h3>
+                <div id="done-tasks" class="task-list space-y-4 min-h-[200px]"></div>
+            </div>
+        </main>
+
+        <!-- Burndown Chart Section -->
+        <div id="burndown-chart-section" class="w-full mx-auto my-6 bg-white p-6 rounded-lg shadow-md hidden">
+            <h2 class="text-2xl font-semibold mb-4 text-gray-800">Project Burndown Chart</h2>
+            <div class="relative h-96">
+                <canvas id="burndownChart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Confetti container for completion animation -->
+    <div id="confetti-container"></div>
+    <!-- Custom modal for notifications/alerts -->
+    <div id="custom-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <p id="modal-message"></p>
+            <button id="modal-close-btn" class="modal-button">OK</button>
+        </div>
+    </div>
+
+    <!-- NEW: Modal for project deletion confirmation -->
+    <div id="delete-project-confirm-modal" class="modal-backdrop hidden">
+        <div class="modal-content">
+            <p id="delete-confirm-message" class="mb-4"></p>
+            <div class="flex justify-center gap-4">
+                <button id="confirm-delete-yes-btn" class="modal-button bg-red-600 hover:bg-red-700">Yes, Delete</button>
+                <button id="confirm-delete-no-btn" class="modal-button bg-gray-500 hover:bg-gray-600">No, Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal for new project details and creation -->
+    <div id="create-project-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-left w-full max-w-md">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800" id="project-modal-title">Create New Project</h3>
+            <label for="new-project-name-input" class="block text-sm font-medium text-gray-700 mb-1">Project Name</label>
+            <input type="text" id="new-project-name-input" placeholder="Enter project name" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-4">
+            
+            <label for="project-description-input" class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <textarea id="project-description-input" placeholder="Brief description of the project" rows="3" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-4"></textarea>
+
+            <label for="project-start-date-input" class="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
+            <input type="date" id="project-start-date-input" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-4">
+
+            <label for="project-end-date-input" class="block text-sm font-medium text-gray-700 mb-1">End Date</label>
+            <input type="date" id="project-end-date-input" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-4">
+
+            <label for="project-status-select" class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select id="project-status-select" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-6">
+                <option value="Active">Active</option>
+                <option value="On Hold">On Hold</option>
+                <option value="Completed">Completed</option>
+                <option value="Archived">Archived</option>
+            </select>
+
+            <!-- NEW: Option to copy tasks from another project -->
+            <label for="copy-tasks-from-project-select" class="block text-sm font-medium text-gray-700 mb-1">Copy "To Do" tasks from (Optional)</label>
+            <select id="copy-tasks-from-project-select" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-6">
+                <option value="">Do not copy tasks</option>
+                <!-- Project options will be dynamically loaded here -->
+            </select>
+            
+            <!-- Hidden input to store project ID when editing -->
+            <input type="hidden" id="editing-project-id">
+
+            <div class="flex justify-end gap-2">
+                <button id="confirm-create-project-btn" class="modal-button bg-indigo-600 hover:bg-indigo-700">Create Project</button>
+                <button id="cancel-create-project-btn" class="modal-button bg-gray-500 hover:bg-gray-600">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- RENAMED: Modal to edit existing task note -->
+    <div id="task-note-edit-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-left w-full max-w-md">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800">Edit Task Note</h3>
+            <textarea id="task-note-textarea-modal" placeholder="Enter note for this task..." rows="5" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-4"></textarea>
+            <input type="hidden" id="editing-task-id-note-modal">
+            <input type="hidden" id="editing-note-index-modal">
+            <div class="flex justify-end gap-2">
+                <button id="save-task-note-modal-btn" class="modal-button bg-indigo-600 hover:bg-indigo-700">Save Note</button>
+                <button id="cancel-task-note-modal-btn" class="modal-button bg-gray-500 hover:bg-gray-600">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Modal to edit subtask text and color -->
+    <div id="subtask-edit-text-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-left w-full max-w-md">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800">Edit Subtask</h3>
+            <label for="subtask-edit-text-input" class="block text-sm font-medium text-gray-700 mb-1">Subtask Content</label>
+            <input type="text" id="subtask-edit-text-input" placeholder="Enter subtask content..." class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-4">
+            
+            <label class="block text-sm font-medium text-gray-700 mb-2">Highlight Color</label>
+            <div class="flex gap-4 mb-4 justify-center">
+                <label class="flex items-center cursor-pointer">
+                    <input type="radio" name="subtask-color" value="default" checked class="form-radio h-4 w-4 text-gray-600">
+                    <span class="ml-2 text-gray-700">Default</span>
+                </label>
+                <label class="flex items-center cursor-pointer">
+                    <input type="radio" name="subtask-color" value="green" class="form-radio h-4 w-4 text-green-500">
+                    <span class="ml-2 text-green-700 font-semibold">Green</span>
+                </label>
+                <label class="flex items-center cursor-pointer">
+                    <input type="radio" name="subtask-color" value="yellow" class="form-radio h-4 w-4 text-yellow-500">
+                    <span class="ml-2 text-yellow-700 font-semibold">Yellow</span>
+                </label>
+                <label class="flex items-center cursor-pointer">
+                    <input type="radio" name="subtask-color" value="red" class="form-radio h-4 w-4 text-red-500">
+                    <span class="ml-2 text-red-700 font-semibold">Red</span>
+                </label>
+            </div>
+
+            <label for="subtask-note-on-edit-modal" class="block text-sm font-medium text-gray-700 mb-1">Subtask Note (Optional)</label>
+            <textarea id="subtask-note-on-edit-modal" placeholder="Enter note for this subtask..." rows="3" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-4"></textarea>
+
+            <input type="hidden" id="editing-task-id-subtext">
+            <input type="hidden" id="editing-subtask-index-subtext">
+            <div class="flex justify-end gap-2">
+                <button id="save-subtask-text-btn" class="modal-button bg-indigo-600 hover:bg-indigo-700">Save Changes</button>
+                <button id="cancel-subtask-text-btn" class="modal-button bg-gray-500 hover:bg-gray-600">Cancel</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal to manage project members -->
+    <div id="manage-members-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-left w-full max-w-md">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800">Manage Project Members</h3>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Current Members:</label>
+                <div id="current-members-list" class="bg-gray-100 p-3 rounded-md min-h-[50px] max-h-48 overflow-y-auto border border-gray-200">
+                    <!-- Members will be loaded here -->
+                </div>
+            </div>
+            <div class="flex gap-2 mb-6">
+                <input type="text" id="new-member-id-input" placeholder="Enter user ID to add" class="flex-grow p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-purple-500 transition">
+                <button id="add-member-btn" class="bg-purple-600 text-white font-semibold py-3 px-6 rounded-md hover:bg-purple-700 transition-colors duration-300">Add</button>
+            </div>
+            <div class="flex justify-end gap-2">
+                <button id="close-members-modal-btn" class="modal-button bg-gray-500 hover:bg-gray-600">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- NEW: Modal to view task details and add comments / edit tasks -->
+    <div id="task-details-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-left w-full max-w-md">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800">Task Details</h3>
+            
+            <label for="task-details-text-input" class="block text-sm font-medium text-gray-700 mb-1">Task Description:</label>
+            <textarea id="task-details-text-input" placeholder="Task description..." rows="3" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full mb-2"></textarea>
+            
+            <div class="flex flex-col sm:flex-row gap-4 mb-4">
+                <!-- Removed manual color input for task details -->
+                <div class="flex items-center gap-2 flex-grow">
+                    <label for="task-details-deadline-input" class="text-gray-700 whitespace-nowrap">Deadline:</label>
+                    <input type="date" id="task-details-deadline-input" class="flex-grow p-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition">
+                </div>
+            </div>
+
+            <button id="save-task-details-btn" class="w-full bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors duration-300 mb-4">Save Task Changes</button>
+
+            <!-- NEW: Task Notes Section -->
+            <div id="task-notes-section-container" class="mb-4">
+                <h4 class="text-lg font-semibold text-gray-800 mb-2">Task Notes:</h4>
+                <div id="task-notes-list" class="bg-gray-100 p-3 rounded-md min-h-[50px] max-h-48 overflow-y-auto border border-gray-200 mb-2">
+                    <!-- Task Notes will be loaded here -->
+                </div>
+                <div class="flex flex-col gap-2">
+                    <textarea id="new-task-note-input" placeholder="Add new note..." rows="3" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full"></textarea>
+                    <button id="add-task-note-btn" class="bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition-colors duration-300">Add Task Note</button>
+                </div>
+            </div>
+
+            <!-- Existing Comments Section -->
+            <div id="comment-section-container" class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Comments:</label>
+                <div id="comments-list" class="bg-gray-100 p-3 rounded-md min-h-[50px] max-h-48 overflow-y-auto border border-gray-200 mb-2">
+                    <!-- Comments will be loaded here -->
+                </div>
+                <div class="flex flex-col gap-2">
+                    <textarea id="new-comment-input" placeholder="Add comment..." rows="3" class="p-3 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-indigo-500 transition w-full"></textarea>
+                    <button id="add-comment-btn" class="bg-indigo-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-indigo-700 transition-colors duration-300">Add Comment</button>
+                </div>
+            </div>
+            <input type="hidden" id="task-id-for-comments">
+
+            <div class="flex justify-end gap-2">
+                <button id="close-task-details-modal-btn" class="modal-button bg-gray-500 hover:bg-gray-600">Close</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Toast Notification for New Comments -->
+    <div id="comment-toast" class="toast-notification">
+        <button class="toggle-button">▲</button>
+        <div class="toast-content">
+            <p>New comment on project: <span id="toast-project-name" class="font-semibold"></span></p>
+            <!-- Updated toast content with task status -->
+            <p>Task: <span id="toast-task-name" class="font-semibold"></span> (Status: <span id="toast-task-status" class="font-semibold capitalize"></span>)</p>
+            <p><span id="toast-comment-text" class="italic"></span></p>
+        </div>
+    </div>
+
+    <!-- Reaction Notification Toast -->
+    <div id="reaction-toast" class="toast-notification">
+        <button class="toggle-button">▲</button>
+        <div class="toast-content">
+            <p>New reaction on project: <span id="reaction-toast-project-name" class="font-semibold"></span></p>
+            <p>Task: <span id="reaction-toast-task-name" class="font-semibold"></span></p>
+            <p>Subtask: <span id="reaction-toast-subtask-text" class="italic"></span></p>
+            <p><span id="reaction-toast-reactor-nickname" class="font-bold"></span> reacted with <span id="reaction-toast-type" class="font-semibold"></span>!</p>
+        </div>
+    </div>
+
+    <!-- NEW: Modal for Recent Events List -->
+    <div id="recent-events-modal" class="modal-backdrop hidden">
+        <div class="modal-content text-left w-full max-w-lg">
+            <h3 class="text-xl font-semibold mb-4 text-gray-800">Recent Events (Latest 100)</h3>
+            <div id="recent-events-list" class="bg-gray-100 p-3 rounded-md min-h-[150px] max-h-[400px] overflow-y-auto border border-gray-200 mb-4">
+                <!-- Recent events will be loaded here -->
+            </div>
+            <div class="flex justify-end gap-2">
+                <button id="close-recent-events-modal-btn" class="modal-button bg-gray-500 hover:bg-gray-600">Close</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script type="module">
+        // Import Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getFirestore, collection, addDoc, onSnapshot, doc, updateDoc, deleteDoc, getDoc, setDoc, arrayUnion, arrayRemove, setLogLevel, query, orderBy, getDocs } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        // NEW: sendPasswordResetEmail imported
+        import { getAuth, signInAnonymously, signInWithEmailAndPassword, signOut, onAuthStateChanged, sendPasswordResetEmail, EmailAuthProvider } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+
+        // =====================================================================================
+        // IMPORTANT: REPLACE THE FOLLOWING PLACEHOLDER VALUES WITH YOUR ACTUAL FIREBASE PROJECT CONFIGURATION.
+        // You can find this configuration in your Firebase Console:
+        // Project settings (gear icon) -> Your apps -> Web app -> Config
+        // COPY THE ENTIRE firebaseConfig OBJECT FROM THERE AND PASTE IT HERE.
+        // ENSURE NO 'YOUR_...' CHARACTERS REMAIN AFTER REPLACEMENT.
+        // =====================================================================================
+       const firebaseConfig = {
+  apiKey: "AIzaSyARy1KhEqym-nTsHgsOfqy6rWGxaGO57p8",
+  authDomain: "test-9de89.firebaseapp.com",
+  projectId: "test-9de89",
+  storageBucket: "test-9de89.firebasestorage.app",
+  messagingSenderId: "297981661248",
+  appId: "1:297981661248:web:6553ebf84e9bf703728fa5",
+  measurementId: "G-MF2XMVRLX4"
+};
+        // =====================================================================================
+        // END FIREBASE CONFIGURATION
+        // =====================================================================================
+
+        // Use projectId as appId for consistent Firestore paths
+        const appId = firebaseConfig.projectId;
+        
+        let app, db, auth, userId;
+        let projectsCollectionRef, adminConfigRef;
+        let unsubscribeFromTasks; // To unsubscribe from real-time task listener
+        let unsubscribeFromProjects; // To unsubscribe from real-time project listener
+        let isCurrentUserAdmin = false; // Flag to determine user role (Super Admin of the application)
+        let currentProjectId = null; // ID of the currently selected project
+        let projectsData = {}; // Stores all fetched project data, by ID
+        let currentProjectMembers = []; // Stores the list of members for the current project
+        let userRole = 'Guest'; // Current user's role (Guest/Admin)
+        let currentOpenTaskDetailsId = null; // To track which task detail modal is open
+        let countdownInterval = null; // Variable to store the countdown interval
+
+        // Variable to store the Burndown chart instance
+        let burndownChartInstance = null;
+
+        // NEW: Mock nickname map - Users in this map can react
+        const userNicknames = {
+            "X84TsIJCM1SzW3FSSVIU5vQyQ5D2": "Phu_Pham", // Example admin ID
+           
+            // Add more user IDs and their desired nicknames here
+        };
+
+        // DOM element references
+        const loginScreen = document.getElementById('login-screen');
+        const adminEmailInput = document.getElementById('admin-email');
+        const adminPasswordInput = document.getElementById('admin-password');
+        const adminLoginBtn = document.getElementById('admin-login-btn');
+        const guestLoginBtn = document.getElementById('guest-login-btn'); // This element will be removed but kept in JS for clarity
+        const mainApp = document.getElementById('app');
+        const logoutBtn = document.getElementById('logout-btn');
+        const changePasswordBtn = document.getElementById('change-password-btn'); // NEW: Change Password Button
+        const recentEventsBtn = document.getElementById('recent-events-btn'); // NEW: Recent Events Button
+
+
+        const displayUserId = document.getElementById('display-user-id');
+        const displayUserRole = document.getElementById('display-user-role');
+        const taskFormContainer = document.getElementById('add-task-container');
+        const taskForm = document.getElementById('add-task-form');
+        const taskInput = document.getElementById('task-input');
+        // const taskColorInput = document.getElementById('task-color-input'); // REMOVED: Manual color input
+        const taskDeadlineInput = document.getElementById('task-deadline-input'); 
+        const columns = document.querySelectorAll('.kanban-column');
+        const projectSelect = document.getElementById('project-select');
+        const createProjectBtn = document.getElementById('create-project-btn');
+        const currentProjectDetailsDiv = document.getElementById('current-project-details');
+        const burndownChartSection = document.getElementById('burndown-chart-section');
+        const editProjectBtn = document.getElementById('edit-project-btn');
+        const manageMembersBtn = document.getElementById('manage-members-btn');
+        const deleteProjectBtn = document.getElementById('delete-project-btn'); // Corrected line
+        const displayProjectMembers = document.getElementById('display-project-members');
+        const countdownTimer = document.getElementById('countdown-timer'); // NEW: Countdown Timer element
+        const countdownDaysValue = document.getElementById('countdown-days-value'); // NEW: Countdown days value
+
+        
+        const createProjectModal = document.getElementById('create-project-modal');
+        const projectModalTitle = document.getElementById('project-modal-title');
+        const newProjectNameInput = document.getElementById('new-project-name-input');
+        const projectDescriptionInput = document.getElementById('project-description-input');
+        const projectStartDateInput = document.getElementById('project-start-date-input');
+        const projectEndDateInput = document.getElementById('project-end-date-input');
+        const projectStatusSelect = document.getElementById('project-status-select');
+        const confirmCreateProjectBtn = document.getElementById('confirm-create-project-btn');
+        const cancelCreateProjectBtn = document.getElementById('cancel-create-project-btn');
+        const editingProjectIdInput = document.getElementById('editing-project-id');
+        const copyTasksFromProjectSelect = document.getElementById('copy-tasks-from-project-select'); 
+
+        const displayProjectName = document.getElementById('display-project-name');
+        const displayProjectDescription = document.getElementById('display-project-description');
+        const displayProjectStartDate = document.getElementById('display-project-start-date');
+        const displayProjectEndDate = document.getElementById('display-project-end-date');
+        const displayProjectStatus = document.getElementById('display-project-status');
+
+        // RENAMED for task notes edit
+        const taskNoteEditModal = document.getElementById('task-note-edit-modal'); 
+        const taskNoteTextareaModal = document.getElementById('task-note-textarea-modal');
+        const editingTaskIdNoteModal = document.getElementById('editing-task-id-note-modal');
+        const editingNoteIndexModal = document.getElementById('editing-note-index-modal');
+        const saveTaskNoteModalBtn = document.getElementById('save-task-note-modal-btn');
+        const cancelTaskNoteModalBtn = document.getElementById('cancel-task-note-modal-btn');
+
+        const subtaskEditTextModal = document.getElementById('subtask-edit-text-modal'); // Repurposed for subtask edit & color
+        const subtaskEditTextInput = document.getElementById('subtask-edit-text-input');
+        const subtaskColorRadios = document.querySelectorAll('input[name="subtask-color"]'); // NEW for subtask color
+        const subtaskNoteOnEditModal = document.getElementById('subtask-note-on-edit-modal'); // NEW for subtask note on edit modal
+        const editingTaskIdSubtext = document.getElementById('editing-task-id-subtext');
+        const editingSubtaskIndexSubtext = document.getElementById('editing-subtask-index-subtext');
+        const saveSubtaskTextBtn = document.getElementById('save-subtask-text-btn');
+        const cancelSubtaskTextBtn = document.getElementById('cancel-subtask-text-btn');
+
+        const manageMembersModal = document.getElementById('manage-members-modal');
+        const currentMembersList = document.getElementById('current-members-list');
+        const newMemberIdInput = document.getElementById('new-member-id-input');
+        const addMemberBtn = document.getElementById('add-member-btn');
+        const closeMembersModalBtn = document.getElementById('close-members-modal-btn');
+
+        const taskDetailsModal = document.getElementById('task-details-modal');
+        const taskDetailsTextInput = document.getElementById('task-details-text-input');
+        // const taskDetailsColorInput = document.getElementById('task-details-color-input'); // REMOVED: Manual color input
+        const taskDetailsDeadlineInput = document.getElementById('task-details-deadline-input');
+        const saveTaskDetailsBtn = document.getElementById('save-task-details-btn'); // Corrected line
+        const commentsList = document.getElementById('comments-list');
+        const newCommentInput = document.getElementById('new-comment-input');
+        const addCommentBtn = document.getElementById('add-comment-btn');
+        const taskIdForComments = document.getElementById('task-id-for-comments');
+        const closeTaskDetailsModalBtn = document.getElementById('close-task-details-modal-btn');
+        const commentToast = document.getElementById('comment-toast'); 
+        const toastTaskName = document.getElementById('toast-task-name'); 
+        const toastProjectName = document.getElementById('toast-project-name'); // NEW
+        const toastCommentText = document.getElementById('toast-comment-text'); // NEW
+        const toggleToastButton = commentToast.querySelector('.toggle-button'); // NEW
+        const commentSectionContainer = document.getElementById('comment-section-container');
+        const taskNotesSectionContainer = document.getElementById('task-notes-section-container'); // NEW for task notes section
+        const taskNotesList = document.getElementById('task-notes-list'); // NEW for task notes list
+        const newTaskNoteInput = document.getElementById('new-task-note-input'); // NEW for task note input
+        const addTaskNoteBtn = document.getElementById('add-task-note-btn'); // NEW for add task note button
+        // NEW: Added for task status in toast
+        const toastTaskStatus = document.getElementById('toast-task-status');
+
+        // Reaction Toast DOM elements
+        const reactionToast = document.getElementById('reaction-toast');
+        const reactionToastProjectName = document.getElementById('reaction-toast-project-name');
+        const reactionToastTaskName = document.getElementById('reaction-toast-task-name');
+        const reactionToastSubtaskText = document.getElementById('reaction-toast-subtask-text');
+        const reactionToastReactorNickname = document.getElementById('reaction-toast-reactor-nickname');
+        const reactionToastType = document.getElementById('reaction-toast-type');
+        const toggleReactionToastButton = reactionToast.querySelector('.toggle-button');
+
+        // NEW: Recent Events Modal DOM elements
+        const recentEventsModal = document.getElementById('recent-events-modal');
+        const recentEventsList = document.getElementById('recent-events-list');
+        const closeRecentEventsModalBtn = document.getElementById('close-recent-events-modal-btn');
+
+
+        const deleteProjectConfirmModal = document.getElementById('delete-project-confirm-modal');
+        const deleteConfirmMessage = document.getElementById('delete-confirm-message');
+        const confirmDeleteYesBtn = document.getElementById('confirm-delete-yes-btn');
+        const confirmDeleteNoBtn = document.getElementById('confirm-delete-no-btn');
+        let projectIdToDelete = null;
+
+        let tasks = [];
+        let draggedTaskId = null;
+        let draggedTaskStatus = null;
+        let draggedTaskOriginalPosition = null;
+
+        // Adjusted for subtask object and its original index
+        let draggedSubtaskInfo = { taskId: null, subtaskObject: null, originalIndex: null }; 
+
+        // Helper map for subtask colors
+        const subtaskColorMap = {
+            'green': 'text-green-700 bg-green-100 border-green-400',
+            'yellow': 'text-yellow-700 bg-yellow-100 border-yellow-400',
+            'red': 'text-red-700 bg-red-100 border-red-400',
+            'default': 'text-gray-700 bg-gray-100 border-gray-300'
+        };
+
+        // Reaction definitions
+        const reactionEmojis = {
+            'like': '👍',
+            'handling': '🤝',
+            'note': '📌'
+        };
+        const reactionNames = {
+            'like': 'Like',
+            'handling': 'Handling',
+            'note': 'Note'
+        };
+
+        // NEW: Array to store recent events (comments and reactions)
+        let recentEvents = [];
+        const MAX_RECENT_EVENTS = 100; // Increased limit from 10 to 100
+
+
+        /**
+         * Get nickname for a User ID.
+         * @param {string} id - User ID.
+         * @returns {string} Nickname or truncated User ID if no nickname is found.
+         */
+        function getNickname(id) {
+            return userNicknames[id] || `${id.substring(0, 8)}...`;
+        }
+
+        /**
+         * Displays the login screen.
+         */
+        function showLoginScreen() {
+            loginScreen.classList.remove('hidden');
+            mainApp.classList.add('hidden');
+            displayUserId.textContent = '';
+            displayUserRole.textContent = '';
+            logoutBtn.classList.add('hidden');
+            changePasswordBtn.classList.add('hidden'); 
+            recentEventsBtn.classList.add('hidden'); // NEW: Hide recent events button
+        }
+
+        /**
+         * Displays the main Kanban application.
+         */
+        function showKanbanBoard() {
+            loginScreen.classList.add('hidden');
+            mainApp.classList.remove('hidden');
+        }
+
+        /**
+         * Initializes the application and Firebase services.
+         * Handles potential errors during initialization.
+         */
+        async function initializeFirebase() {
+            try {
+                if (!firebaseConfig.apiKey || firebaseConfig.apiKey.includes("YOUR_")) {
+                    showModal("Firebase configuration is missing or incomplete. Please update the firebaseConfig object in index.html with your project information.");
+                    showLoginScreen();
+                    return;
+                }
+
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                setLogLevel('debug'); 
+                setupAuthListener();
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+                showModal("Could not connect to the database. Please check your Firebase configuration and network connection, then refresh the page.");
+                showLoginScreen();
+            }
+        }
+
+        /**
+         * Sets up the listener for Firebase authentication state changes.
+         * Decides whether to display the login screen or the main application.
+         */
+        function setupAuthListener() {
+            onAuthStateChanged(auth, async (user) => {
+                if (user) {
+                    userId = user.uid;
+                    projectsCollectionRef = collection(db, `artifacts/${appId}/public/data/projects`); 
+                    adminConfigRef = doc(db, `artifacts/${appId}/public/data/config`, 'admin');
+                    
+                    await checkAdminStatus(); 
+                    updateUIAfterAuth();
+                    setupProjectsListener();
+                    await loadInitialRecentEvents(); // Load all historical events after auth
+                    showKanbanBoard();
+                } else {
+                    // User logged out. Unsubscribe from all active listeners.
+                    if (unsubscribeFromProjects) {
+                        unsubscribeFromProjects();
+                        unsubscribeFromProjects = null; // Reset to null after unsubscribing
+                    }
+                    if (unsubscribeFromTasks) {
+                        unsubscribeFromTasks();
+                        unsubscribeFromTasks = null; // Reset to null after unsubscribing
+                    }
+                    currentProjectId = null; // Clear the currently selected project
+                    projectsData = {}; // Clear cached project data
+                    tasks = []; // Clear tasks array
+                    renderTasks(); // Clear displayed tasks
+                    displayProjectDetails(null); // Clear project details display
+                    burndownChartSection.classList.add('hidden'); // Hide chart
+                    
+                    // Stop the countdown timer if it's running
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    
+                    // NEW: Clear recent events on logout
+                    recentEvents = []; // This should be cleared on logout
+                    recentEventsList.innerHTML = '';
+                    recentEventsModal.classList.add('hidden');
+
+                    showLoginScreen();
+                }
+            });
+        }
+        
+        /**
+         * Handles Admin login with email and password.
+         * @param {string} email - Admin's email.
+         * @param {string} password - Admin's password.
+         */
+        async function handleAdminLogin(email, password) {
+            try {
+                const userCredential = await signInWithEmailAndPassword(auth, email, password);
+            } catch (error) {
+                console.error("Login failed:", error); // Changed message to be generic
+                let errorMessage = "Login failed. Please check your email and password.";
+                if (error.code === 'auth/user-not-found' || error.code === 'auth/wrong-password' || error.code === 'auth/invalid-credential') {
+                    errorMessage = "Invalid email or password.";
+                } else if (error.code === 'auth/invalid-email') {
+                    errorMessage = "Invalid email format.";
+                } else if (error.code === 'auth/network-request-failed') {
+                    errorMessage = "Network error. Please check your internet connection.";
+                } else if (error.code === 'auth/too-many-requests') {
+                    errorMessage = "Too many failed login attempts. Please try again later.";
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    errorMessage = "Email/Password authentication is not enabled in Firebase. Please enable it in your Firebase project settings.";
+                }
+                else {
+                    errorMessage = `Login failed: ${error.message}`;
+                }
+                showModal(errorMessage);
+            }
+        }
+
+        /**
+         * Handles anonymous guest login.
+         * This function is now effectively removed as the "Continue as Guest" button is gone.
+         * However, keeping the function definition in case it's called elsewhere or for future use.
+         */
+        async function handleGuestLogin() {
+            try {
+                // Since the guest login button is removed, this function might not be called.
+                // If you intend to disable guest login, you might want to remove this function entirely
+                // or ensure it's not reachable. For now, it remains.
+                const userCredential = await signInAnonymously(auth);
+            } catch (error) {
+                console.error("Guest login failed:", error);
+                let errorMessage = "Could not log in as guest. Please refresh the page or try again.";
+                if (error.code === 'auth/network-request-failed') {
+                    errorMessage = "Network error. Please check your internet connection.";
+                } else if (error.code === 'auth/operation-not-allowed') {
+                    errorMessage = "Anonymous authentication is not enabled in Firebase. Please enable it in your Firebase project settings.";
+                } else {
+                    errorMessage = `Guest login failed: ${error.message}`;
+                }
+                showModal(errorMessage);
+            }
+        }
+
+        /**
+         * Handles logout.
+         */
+        async function handleLogout() {
+            try {
+                await signOut(auth);
+                showModal("You have been logged out.");
+            } catch (error) {
+                console.error("Logout failed:", error);
+                showModal("Logout failed.");
+            }
+        }
+
+        /**
+         * Handles sending a password reset email to the current user.
+         */
+        async function handleChangePassword() {
+            const user = auth.currentUser;
+            if (user) {
+                // Check if the user signed in with email/password
+                const isEmailPasswordUser = user.providerData.some(
+                    (provider) => provider.providerId === EmailAuthProvider.PROVIDER_ID
+                );
+
+                if (isEmailPasswordUser && user.email) {
+                    try {
+                        await sendPasswordResetEmail(auth, user.email);
+                        showModal("Password reset email sent! Please check your inbox.");
+                    } catch (error) {
+                        console.error("Error sending password reset email:", error);
+                        let errorMessage = "Could not send password reset email. Please try again later.";
+                        if (error.code === 'auth/missing-email') {
+                            errorMessage = "No email associated with this account. Cannot send reset link.";
+                        } else if (error.code === 'auth/network-request-failed') {
+                            errorMessage = "Network error. Please check your internet connection.";
+                        } else {
+                            errorMessage = `Could not send password reset email: ${error.message}`;
+                        }
+                        showModal(errorMessage);
+                    }
+                } else if (user.isAnonymous) {
+                    showModal("You are currently logged in as a guest. Guest accounts do not have a password to reset. Please log in with an email account to use this feature.");
+                } else {
+                    showModal("This feature is only available for users signed up with email and password. For other sign-in methods (e.g., Google), please change your password through that provider's settings.");
+                }
+            } else {
+                showModal("You must be logged in to change your password.");
+            }
+        }
+
+
+        /**
+         * Checks the admin status for the current user.
+         * This version hardcodes specific admin User IDs.
+         */
+        async function checkAdminStatus() {
+            const predefinedAdminIds = [
+                "37GhB7vKrvdNVQKIfsVEnHaLmHO2",
+                "cTstHQAc8JhHuh6DRXi1A3t0J5r2"
+            ];
+
+            if (userId && predefinedAdminIds.includes(userId)) {
+                isCurrentUserAdmin = true;
+            } else {
+                isCurrentUserAdmin = false;
+            }
+        }
+        
+        /**
+         * Updates the user interface based on authentication status and user role.
+         */
+        function updateUIAfterAuth() {
+            userRole = isCurrentUserAdmin ? 'Admin' : 'Viewer';
+            displayUserId.textContent = getNickname(userId); // Display nickname
+            displayUserRole.textContent = userRole;
+            displayUserRole.className = `font-bold ${isCurrentUserAdmin ? 'text-green-600' : 'text-blue-600'}`;
+            logoutBtn.classList.remove('hidden');
+            changePasswordBtn.classList.toggle('hidden', auth.currentUser.isAnonymous);
+            recentEventsBtn.classList.remove('hidden'); // NEW: Show recent events button
+
+            const canManageProjects = isCurrentUserAdmin;
+            createProjectBtn.disabled = !canManageProjects;
+            // NEW: Hide createProjectBtn for non-admin viewers
+            createProjectBtn.classList.toggle('hidden', !canManageProjects); 
+            editProjectBtn.disabled = !canManageProjects;
+            manageMembersBtn.disabled = !canManageProjects;
+            deleteProjectBtn.disabled = !canManageProjects;
+            taskFormContainer.classList.toggle('hidden', !canManageProjects);
+
+            document.querySelector('main').classList.remove('hidden');
+            burndownChartSection.classList.remove('hidden');
+        }
+
+        /**
+         * Checks if the current user is a member of the selected project.
+         * Super Admin always has rights.
+         * @returns {boolean} True if the user is a member or super admin, otherwise false.
+         */
+        function isCurrentUserProjectMember() {
+            if (isCurrentUserAdmin) return true;
+            if (!currentProjectId) return false;
+            const project = projectsData[currentProjectId];
+            if (!project || !project.members) return false;
+            return project.members.includes(userId);
+        }
+
+        /**
+         * Checks if the current user is allowed to react to subtasks.
+         * Only users with a defined nickname can react.
+         * @returns {boolean} True if the user can react, otherwise false.
+         */
+        function isUserAllowedToReact() {
+            return userId && userNicknames.hasOwnProperty(userId);
+        }
+
+        /**
+         * Sets up a real-time listener for the list of projects from Firestore.
+         * This listener also populates the "Copy tasks from" dropdown in the project creation modal.
+         */
+        function setupProjectsListener() {
+            // Unsubscribe from previous listener if it exists
+            if (unsubscribeFromProjects) unsubscribeFromProjects();
+
+            const projectsQuery = query(collection(db, `artifacts/${appId}/public/data/projects`), orderBy('createdAt', 'desc'));
+
+            // Set up new listener
+            unsubscribeFromProjects = onSnapshot(projectsQuery, (snapshot) => {
+                projectSelect.innerHTML = '<option value="">Select a Project</option>';
+                copyTasksFromProjectSelect.innerHTML = '<option value="">Do not copy tasks</option>';
+                projectsData = {}; // Clear existing project data
+                let firstProjectId = null;
+                
+                snapshot.docs.forEach(projectDoc => {
+                    const project = { id: projectDoc.id, ...projectDoc.data() };
+                    projectsData[project.id] = project;
+                    
+                    const option = document.createElement('option');
+                    option.value = project.id;
+                    option.textContent = project.name;
+                    projectSelect.appendChild(option);
+
+                    const copyOption = document.createElement('option');
+                    copyOption.value = project.id;
+                    copyOption.textContent = project.name;
+                    copyTasksFromProjectSelect.appendChild(copyOption);
+
+                    if (!firstProjectId) {
+                        firstProjectId = project.id;
+                    }
+                });
+
+                // Logic to select a project or handle no projects
+                if (!currentProjectId && firstProjectId) {
+                    projectSelect.value = firstProjectId;
+                    currentProjectId = firstProjectId;
+                    setupRealtimeListener(currentProjectId);
+                    displayProjectDetails(projectsData[currentProjectId]);
+                } else if (currentProjectId && !snapshot.docs.some(doc => doc.id === currentProjectId)) {
+                    // If the currently selected project was deleted or is no longer available
+                    currentProjectId = firstProjectId; // Try to select the first available project
+                    projectSelect.value = firstProjectId || "";
+                    if (unsubscribeFromTasks) unsubscribeFromTasks(); // Unsubscribe from old tasks listener
+                    renderTasks(); // Clear tasks
+                    if (firstProjectId) {
+                         setupRealtimeListener(firstProjectId);
+                         displayProjectDetails(projectsData[firstProjectId]);
+                    } else {
+                        displayProjectDetails(null); // No projects left, hide details
+                    }
+                } else if (currentProjectId) {
+                     // If current project is still valid, ensure it's selected and details are displayed
+                     projectSelect.value = currentProjectId;
+                     displayProjectDetails(projectsData[currentProjectId]);
+                } else {
+                    // No projects at all or no project selected initially
+                    if (unsubscribeFromTasks) unsubscribeFromTasks(); // Unsubscribe from tasks listener
+                    renderTasks(); // Clear tasks
+                    displayProjectDetails(null); // Hide project details
+                }
+
+                // Show/hide main content based on whether there are projects
+                const mainContent = document.querySelector('main');
+                if (snapshot.empty) {
+                    mainContent.classList.add('hidden');
+                    burndownChartSection.classList.add('hidden');
+                } else {
+                    mainContent.classList.remove('hidden');
+                }
+            }, (error) => {
+                // This error handler should ideally only catch genuine errors while logged in.
+                // Log the error but don't show a modal on simple logout (handled by explicit unsubscribe).
+                console.error("Error fetching projects:", error);
+                // The modal is explicitly removed here to prevent it from showing on logout.
+                // If you want to show a modal for *other* fetching errors (when logged in),
+                // you would add a more specific condition here.
+            });
+        }
+
+        /**
+         * Sets up a real-time listener for tasks from Firestore for the current project.
+         * Updates the 'tasks' array and re-renders the UI on changes.
+         * @param {string} projectId - The ID of the project to fetch tasks for.
+         */
+        function setupRealtimeListener(projectId) {
+            // Unsubscribe from previous listener if it exists
+            if (unsubscribeFromTasks) unsubscribeFromTasks();
+            
+            const tasksCollectionRef = collection(db, `artifacts/${appId}/public/data/projects/${projectId}/tasks`);
+            const tasksQuery = query(tasksCollectionRef, orderBy('position', 'asc'));
+
+            // Set up new listener
+            unsubscribeFromTasks = onSnapshot(tasksQuery, (snapshot) => {
+                const newTasks = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+                // Check for new comments and trigger toast
+                newTasks.forEach(newTask => {
+                    const oldTask = tasks.find(t => t.id === newTask.id);
+                    const oldCommentCount = oldTask ? (oldTask.comments ? oldTask.comments.length : 0) : 0;
+                    const newCommentCount = newTask.comments ? newTask.comments.length : 0;
+
+                    if (newCommentCount > oldCommentCount && newTask.id !== currentOpenTaskDetailsId) {
+                        const newComment = newTask.comments[newCommentCount - 1]; // Get the latest comment
+                        const projectName = projectsData[currentProjectId]?.name || 'Unknown Project';
+                        // Pass task status to the toast
+                        showCommentToast(projectName, newTask.text, newTask.status, newComment.text); 
+                        addEventToRecentEvents({
+                            type: 'comment',
+                            timestamp: newComment.timestamp,
+                            projectId: currentProjectId,
+                            projectName: projectName,
+                            taskId: newTask.id,
+                            taskText: newTask.text,
+                            taskStatus: newTask.status,
+                            commenterId: newComment.commenterId,
+                            commentText: newComment.text
+                        });
+                    }
+
+                    // Check for new reactions on subtasks
+                    if (newTask.subtasks) { 
+                        newTask.subtasks.forEach((newSubtask, subtaskIndex) => {
+                            const oldSubtask = oldTask && oldTask.subtasks ? oldTask.subtasks[subtaskIndex] : null;
+
+                            const oldReactions = new Set((oldSubtask?.reactions || []).map(r => `${r.type}-${r.reactorId}`));
+                            const currentReactions = newSubtask.reactions || [];
+
+                            currentReactions.forEach(reaction => {
+                                // Check if this specific reaction (type + reactorId) was NOT present in the old state
+                                // Now adds to recent events regardless of who reacted
+                                if (!oldReactions.has(`${reaction.type}-${reaction.reactorId}`)) {
+                                    // It's a new reaction
+                                    // Only show toast if not self-reaction
+                                    if (reaction.reactorId !== userId) { 
+                                        const projectName = projectsData[currentProjectId]?.name || 'Unknown Project';
+                                        showReactionToast(
+                                            projectName,
+                                            newTask.text,
+                                            newSubtask.text,
+                                            getNickname(reaction.reactorId),
+                                            reaction.type
+                                        );
+                                    }
+                                    addEventToRecentEvents({
+                                        type: 'reaction',
+                                        timestamp: reaction.timestamp,
+                                        projectId: currentProjectId,
+                                        projectName: projectsData[currentProjectId]?.name || 'Unknown Project',
+                                        taskId: newTask.id,
+                                        taskText: newTask.text,
+                                        subtaskText: newSubtask.text,
+                                        reactorId: reaction.reactorId,
+                                        reactionType: reaction.type
+                                    });
+                                }
+                            });
+                        });
+                    }
+                });
+
+                tasks = newTasks;
+                renderTasks();
+                const project = projectsData[currentProjectId];
+                if (project && project.startDate && project.endDate) {
+                    const burndownData = calculateBurndownData(tasks, project.startDate, project.endDate);
+                    renderBurndownChart(burndownData);
+                    burndownChartSection.classList.remove('hidden');
+                    startCountdown(project.endDate); // Start or update countdown
+                } else {
+                    burndownChartSection.classList.add('hidden');
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    countdownTimer.classList.add('hidden');
+                }
+            }, (error) => {
+                console.error("Error fetching tasks for project:", error);
+                // Do not show modal here on general errors, as it might be due to logout
+            });
+        }
+
+        /**
+         * Renders all tasks into their respective Kanban columns.
+         */
+        function renderTasks() {
+            document.querySelectorAll('.task-list').forEach(list => list.innerHTML = ''); 
+            tasks.forEach(task => {
+                const column = document.getElementById(`${task.status}-tasks`);
+                if (column) {
+                    const taskElement = createTaskElement(task);
+                    column.appendChild(taskElement);
+                }
+            });
+        }
+
+        /**
+         * Creates a DOM element for a task.
+         * Adds drag-and-drop, delete, and copy functionality if the user is an admin or project member.
+         * @param {Object} task - The task object from Firestore.
+         * @returns {HTMLElement} The created task DOM element.
+         */
+        function createTaskElement(task) {
+            const div = document.createElement('div');
+            const canModifyTask = isCurrentUserProjectMember();
+
+            let deadlineClass = '';
+            // Only apply deadline color if the task is not done
+            if (task.deadline && task.status !== 'done') { 
+                const deadlineDate = new Date(task.deadline);
+                const now = new Date();
+                now.setHours(0, 0, 0, 0); 
+
+                const diffTime = deadlineDate.getTime() - now.getTime();
+                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); 
+
+                if (diffDays <= 7) {
+                    // Less than or equal to 1 week
+                    deadlineClass = 'bg-red-100 border-red-400 text-red-800'; 
+                } else if (diffDays <= 14) {
+                    // Less than or equal to 2 weeks
+                    deadlineClass = 'bg-yellow-100 border-yellow-400 text-yellow-800'; 
+                } else if (diffDays <= 30) {
+                    // Less than or equal to 1 month
+                    deadlineClass = 'bg-green-100 border-green-400 text-green-800'; 
+                }
+            }
+            
+            // Default background and border if no deadline class applies or if task is done
+            const defaultBgBorder = 'bg-white border-gray-300 text-gray-800';
+
+            // Apply dynamic classes for background and border based on deadline
+            // If task is 'done', it should revert to default styling regardless of deadline
+            div.className = `task-card p-4 rounded-lg shadow-sm ${canModifyTask ? 'is-admin' : ''} ${deadlineClass || defaultBgBorder}`; 
+
+            div.setAttribute('data-id', task.id);
+            div.setAttribute('data-position', task.position);
+            div.setAttribute('data-status', task.status);
+
+            if (canModifyTask) {
+                div.setAttribute('draggable', 'true');
+                div.addEventListener('dragstart', handleDragStart);
+                div.addEventListener('dragend', handleDragEnd);
+                div.addEventListener('dragenter', handleDragEnter);
+                div.addEventListener('dragleave', handleDragLeave);
+                div.addEventListener('dragover', handleDragOverTask);
+                div.addEventListener('drop', handleDropTask);
+            }
+
+            // Click listener for the entire task card (for viewers, and for admins when not editing)
+            div.addEventListener('click', (e) => {
+                // For viewers, clicking anywhere opens in view/comment mode
+                // For admins/members, clicking anywhere *except* action buttons or subtask checkboxes
+                // should open in view mode (no comment input/button).
+                // The edit button itself handles opening in edit mode for admins/members.
+                // Subtask checkbox click should not open the modal.
+                // Added check for input field here
+                if (e.target.closest('button') || e.target.closest('input[type="checkbox"]') || e.target.closest('input[type="text"]')) {
+                    e.stopPropagation(); 
+                    return;
+                }
+                openTaskDetailsModal(task, false); 
+            });
+
+
+            // Task Actions (Edit, Delete, Copy) - Placed at top right
+            const taskActionsDiv = document.createElement('div');
+            taskActionsDiv.className = 'absolute top-2 right-2 flex gap-1';
+            div.style.position = 'relative';
+
+            if (canModifyTask) { 
+                const editTaskButton = document.createElement('button');
+                editTaskButton.textContent = '✏️';
+                editTaskButton.className = 'text-gray-500 hover:text-gray-700 p-1 rounded';
+                editTaskButton.title = 'Edit Task';
+                editTaskButton.onclick = (e) => {
+                    e.stopPropagation(); 
+                    openTaskDetailsModal(task, true); 
+                };
+                taskActionsDiv.appendChild(editTaskButton);
+
+                if (task.status === 'todo') {
+                    const copyButton = document.createElement('button');
+                    copyButton.textContent = '📋';
+                    copyButton.className = 'text-gray-500 hover:text-gray-700 p-1 rounded';
+                    copyButton.title = 'Copy Task';
+                    copyButton.onclick = (e) => {
+                        e.stopPropagation();
+                        handleCopyTask(task.id);
+                    };
+                    taskActionsDiv.appendChild(copyButton);
+                }
+
+                const deleteButton = document.createElement('button');
+                deleteButton.textContent = '×';
+                    deleteButton.className = 'font-bold text-red-500 hover:text-red-700 text-xl leading-none px-1 rounded-full';
+                deleteButton.onclick = (e) => {
+                    e.stopPropagation();
+                    handleDeleteTask(task.id);
+                };
+                taskActionsDiv.appendChild(deleteButton);
+            }
+            div.appendChild(taskActionsDiv);
+
+            const text = document.createElement('p');
+            text.textContent = task.text;
+            text.className = 'font-semibold mb-1 pr-12'; 
+            div.appendChild(text);
+
+            if (task.deadline) {
+                const deadlineText = document.createElement('p');
+                deadlineText.className = 'text-xs italic mb-2'; 
+                deadlineText.textContent = `Deadline: ${new Date(task.deadline).toLocaleDateString('en-US')}`;
+                div.appendChild(deadlineText);
+            }
+
+            if (task.comments && task.comments.length > 0) {
+                const commentsCount = document.createElement('p');
+                commentsCount.className = 'text-xs text-gray-500 italic mt-1';
+                commentsCount.textContent = `💬 ${task.comments.length} Comments`;
+                div.appendChild(commentsCount);
+            }
+
+            const subtasksContainer = document.createElement('div');
+            subtasksContainer.className = 'mt-3 pt-3 border-t border-gray-200';
+            
+            // Sort subtasks by position before rendering
+            const sortedSubtasks = (task.subtasks || []).sort((a, b) => (a.position || 0) - (b.position || 0));
+
+            if (sortedSubtasks.length > 0) {
+                const subtasksHeader = document.createElement('p');
+                subtasksHeader.className = 'text-sm font-semibold text-gray-600 mb-2';
+                subtasksHeader.textContent = 'Subtasks:';
+                subtasksContainer.appendChild(subtasksHeader);
+
+                sortedSubtasks.forEach((subtask, index) => {
+                    const subtaskItem = document.createElement('div');
+                    // Added 'group' class for hover effects
+                    subtaskItem.className = `subtask-item flex items-center justify-between text-sm mb-1 p-1 rounded relative group ${subtaskColorMap[subtask.color] || subtaskColorMap['default']}`; 
+                    subtaskItem.setAttribute('data-task-id', task.id); 
+                    subtaskItem.setAttribute('data-subtask-index', index); 
+                    // No need to set data-subtask-position here as handleSubtaskDragStart now copies the object
+
+                    if (canModifyTask) {
+                        subtaskItem.setAttribute('draggable', 'true'); 
+                        subtaskItem.addEventListener('dragstart', handleSubtaskDragStart);
+                        subtaskItem.addEventListener('dragend', handleSubtaskDragEnd);
+                        subtaskItem.addEventListener('dragenter', handleSubtaskDragEnter);
+                        subtaskItem.addEventListener('dragleave', handleSubtaskDragLeave);
+                        subtaskItem.addEventListener('dragover', handleSubtaskDragOver);
+                        subtaskItem.addEventListener('drop', handleSubtaskDrop);
+                    }
+                    
+                    const subtaskContent = document.createElement('label');
+                    subtaskContent.className = 'flex items-center flex-grow cursor-pointer';
+
+                    const subtaskCheckbox = document.createElement('input');
+                    subtaskCheckbox.type = 'checkbox';
+                    subtaskCheckbox.checked = subtask.isCompleted;
+                    subtaskCheckbox.className = 'mr-2 h-4 w-4 text-indigo-600 border-gray-300 rounded focus:ring-indigo-500';
+                    subtaskCheckbox.disabled = !canModifyTask;
+                    subtaskCheckbox.addEventListener('change', (e) => {
+                        e.stopPropagation(); 
+                        handleToggleSubtask(task.id, index);
+                    });
+
+                    const subtaskTextSpan = document.createElement('span');
+                    subtaskTextSpan.textContent = subtask.text;
+                    subtaskTextSpan.className = subtask.isCompleted ? 'line-through text-gray-500' : ''; 
+
+                    subtaskContent.appendChild(subtaskCheckbox);
+                    subtaskContent.appendChild(subtaskTextSpan);
+                    subtaskItem.appendChild(subtaskContent);
+
+                    if (canModifyTask) {
+                        const subtaskActionsDiv = document.createElement('div'); 
+                        subtaskActionsDiv.className = 'flex items-center gap-1';
+
+                        const editSubtaskTextButton = document.createElement('button');
+                        editSubtaskTextButton.textContent = '📝';
+                        editSubtaskTextButton.className = 'text-gray-500 hover:text-gray-700 p-1 rounded';
+                        editSubtaskTextButton.title = 'Edit Subtask';
+                        editSubtaskTextButton.onclick = (e) => {
+                            e.stopPropagation();
+                            openSubtaskEditTextModal(task.id, index, subtask.text, subtask.note || '', subtask.color || 'default');
+                        };
+                        subtaskActionsDiv.appendChild(editSubtaskTextButton);
+
+                        const deleteSubtaskButton = document.createElement('button');
+                        deleteSubtaskButton.textContent = 'x';
+                        deleteSubtaskButton.className = 'text-xs font-bold text-red-400 hover:text-red-600 p-1 rounded';
+                        deleteSubtaskButton.title = 'Delete Subtask';
+                        deleteSubtaskButton.onclick = (e) => {
+                            e.stopPropagation();
+                            handleDeleteSubtask(task.id, index);
+                        };
+                        subtaskActionsDiv.appendChild(deleteSubtaskButton); 
+
+                        subtaskItem.appendChild(subtaskActionsDiv);
+                    }
+                    subtasksContainer.appendChild(subtaskItem);
+                    
+                    if (subtask.note && subtask.note.trim() !== '') {
+                        const subtaskNoteDisplay = document.createElement('p');
+                        subtaskNoteDisplay.className = 'text-xs text-gray-500 italic ml-6 mb-1 break-words';
+                        subtaskNoteDisplay.textContent = `Note: ${subtask.note}`;
+                        subtasksContainer.appendChild(subtaskNoteDisplay);
+                    }
+
+                    // NEW: Subtask Reactions - Single button with hover for options
+                    if (isUserAllowedToReact()) {
+                        const subtaskReactionsContainer = document.createElement('div');
+                        subtaskReactionsContainer.className = 'subtask-reactions-container'; 
+
+                        const reactionTypes = [
+                            { type: 'like', emoji: '👍', name: 'Like' },
+                            { type: 'handling', emoji: '🤝', name: 'Handling' },
+                            { type: 'note', emoji: '📌', name: 'Note' }
+                        ];
+
+                        reactionTypes.forEach(reactionDef => {
+                            const reactionsForType = (subtask.reactions || []).filter(
+                                r => r.type === reactionDef.type
+                            );
+                            const reactionCount = reactionsForType.length;
+                            const hasReacted = reactionsForType.some(
+                                r => r.reactorId === userId
+                            );
+
+                            const reactionButton = document.createElement('button');
+                            reactionButton.className = `reaction-button ${hasReacted ? 'reacted' : 'not-reacted'}`;
+                            // This title will be overridden by the tooltip for nicknames, but good for fallback
+                            reactionButton.title = reactionDef.name; 
+
+                            reactionButton.innerHTML = `<span>${reactionDef.emoji}</span> <span class="text-xs font-medium">${reactionCount > 0 ? reactionCount : ''}</span>`;
+
+                            // Tooltip for nicknames
+                            const tooltip = document.createElement('div');
+                            tooltip.className = 'reaction-tooltip';
+                            
+                            reactionButton.addEventListener('mouseenter', () => {
+                                if (reactionsForType.length > 0) {
+                                    const nicknames = reactionsForType.map(r => getNickname(r.reactorId)).join(', ');
+                                    tooltip.textContent = nicknames;
+                                } else {
+                                    tooltip.textContent = reactionDef.name;
+                                }
+                            });
+                            reactionButton.appendChild(tooltip);
+
+                            reactionButton.onclick = async (e) => {
+                                e.stopPropagation(); 
+                                await toggleSubtaskReaction(task.id, index, reactionDef.type);
+                            };
+                            subtaskReactionsContainer.appendChild(reactionButton);
+                        });
+                        subtaskItem.appendChild(subtaskReactionsContainer);
+                    }
+                });
+            }
+
+            if (canModifyTask) {
+                const addSubtaskDiv = document.createElement('div');
+                addSubtaskDiv.className = 'flex mt-2 gap-2';
+
+                const newSubtaskInput = document.createElement('input');
+                newSubtaskInput.type = 'text';
+                newSubtaskInput.placeholder = 'Add subtask...';
+                newSubtaskInput.className = 'flex-grow p-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-1 focus:ring-indigo-500';
+                newSubtaskInput.addEventListener('keypress', (e) => {
+                    e.stopPropagation(); 
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        handleAddSubtask(task.id, newSubtaskInput.value);
+                    }
+                });
+                newSubtaskInput.addEventListener('click', (e) => {
+                    e.stopPropagation(); 
+                });
+
+                const addSubtaskButton = document.createElement('button');
+                addSubtaskButton.textContent = '+';
+                addSubtaskButton.className = 'bg-indigo-500 text-white p-2 rounded-md hover:bg-indigo-600 transition';
+                addSubtaskButton.onclick = (e) => { 
+                    e.stopPropagation(); 
+                    handleAddSubtask(task.id, newSubtaskInput.value);
+                };
+
+                addSubtaskDiv.appendChild(newSubtaskInput);
+                addSubtaskDiv.appendChild(addSubtaskButton);
+                subtasksContainer.appendChild(addSubtaskDiv);
+            }
+
+            div.appendChild(subtasksContainer);
+
+            return div;
+        }
+
+        /**
+         * Opens the task details modal and populates it with data.
+         * @param {Object} task - The task object to display/comment on.
+         * @param {boolean} [isEditMode=false] - Whether to open the modal in edit mode.
+         */
+        function openTaskDetailsModal(task, isEditMode = false) {
+            currentOpenTaskDetailsId = task.id;
+            taskIdForComments.value = task.id; 
+
+            taskDetailsTextInput.value = task.text || '';
+            taskDetailsDeadlineInput.value = task.deadline || '';
+
+            const canModifyTaskProperties = isCurrentUserProjectMember(); 
+            const canComment = !!userId; 
+            const canAddOrEditNotes = isCurrentUserProjectMember(); 
+
+            // Save Task Changes button is only visible if current user is admin/project member AND opened in edit mode
+            saveTaskDetailsBtn.classList.toggle('hidden', !(isEditMode && canModifyTaskProperties));
+
+            // Commenting section visibility
+            commentSectionContainer.classList.toggle('hidden', !canComment);
+
+            // Task Notes section visibility: Only visible if a project member AND in edit mode, OR if a Viewer and not logged in (which should be hidden by canAddOrEditNotes)
+            // Simplified: only show if current user is a project member and in edit mode
+            taskNotesSectionContainer.classList.toggle('hidden', !canAddOrEditNotes || !isEditMode);
+
+
+            // Enable/disable comment input and button based on canComment
+            newCommentInput.disabled = !canComment;
+            addCommentBtn.disabled = !canComment;
+            newCommentInput.placeholder = canComment ? "Add comment..." : "Log in to add comments...";
+
+            // Task note input and button are disabled based on canAddOrEditNotes
+            newTaskNoteInput.disabled = !canAddOrEditNotes;
+            addTaskNoteBtn.disabled = !canAddOrEditNotes;
+            newTaskNoteInput.placeholder = canAddOrEditNotes ? "Add new note..." : "Only project members can add notes...";
+            
+            // Task details input fields read-only/disabled status
+            taskDetailsTextInput.readOnly = !isEditMode || !canModifyTaskProperties;
+            taskDetailsDeadlineInput.disabled = !isEditMode || !canModifyTaskProperties;
+
+
+            renderComments(task.comments || []);
+            renderTaskNotes(task.notes || []); 
+
+            taskDetailsModal.classList.remove('hidden');
+            // Focus based on user role and mode
+            if (isEditMode && canModifyTaskProperties) { 
+                taskDetailsTextInput.focus();
+            } else if (canComment) { 
+                newCommentInput.focus();
+            }
+        }
+
+        /**
+         * Handles saving edited task details (text, color, deadline).
+         */
+        saveTaskDetailsBtn.addEventListener('click', async () => {
+            const taskId = taskIdForComments.value;
+            const newText = taskDetailsTextInput.value.trim();
+            const newDeadline = taskDetailsDeadlineInput.value;
+
+            if (!taskId || !currentProjectId || !newText) {
+                showModal("Please enter task content.");
+                return;
+            }
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to edit this task.");
+                return;
+            }
+
+            try {
+                const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+                await updateDoc(taskRef, {
+                    text: newText,
+                    deadline: newDeadline || null
+                });
+                taskDetailsModal.classList.add('hidden');
+                showModal("Task updated successfully!");
+            } catch (error) {
+                console.error("Error updating task details:", error);
+                showModal("Failed to update task details.");
+            }
+        });
+
+        /**
+         * Renders the list of comments in the task details modal.
+         * @param {Array<Object>} commentsArray - Array of comment objects.
+         */
+        function renderComments(commentsArray) {
+            commentsList.innerHTML = '';
+            if (commentsArray.length === 0) {
+                commentsList.textContent = 'No comments yet.';
+                commentsList.classList.add('text-gray-500', 'italic');
+                return;
+            }
+            commentsList.classList.remove('text-gray-500', 'italic');
+            commentsArray.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            commentsArray.forEach((comment, index) => {
+                const commentItem = document.createElement('div');
+                // Added relative positioning to commentItem for action buttons
+                commentItem.className = 'p-2 bg-white rounded-md shadow-sm mb-2 text-sm border-l-2 border-blue-300 relative'; 
+                
+                const commentHeader = document.createElement('div');
+                // Increased pr to 20 for more space
+                commentHeader.className = 'flex justify-between items-center mb-1 pr-20'; 
+                
+                const commenterIdSpan = document.createElement('span');
+                commenterIdSpan.className = 'font-semibold text-blue-700';
+                commenterIdSpan.textContent = getNickname(comment.commenterId); 
+                commentHeader.appendChild(commenterIdSpan);
+
+                const timestampSpan = document.createElement('span');
+                timestampSpan.className = 'text-xs text-gray-500';
+                const date = new Date(comment.timestamp);
+                timestampSpan.textContent = date.toLocaleDateString('en-US') + ' ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                commentHeader.appendChild(timestampSpan);
+
+                commentItem.appendChild(commentHeader);
+
+                const commentTextP = document.createElement('p');
+                // Removed pr-6 from commentTextP, as pr-20 on header should be sufficient
+                commentTextP.className = 'text-gray-800 break-words'; 
+                commentTextP.textContent = comment.text;
+                commentItem.appendChild(commentTextP);
+
+                // Actions container for comments
+                const commentActionsDiv = document.createElement('div');
+                commentActionsDiv.className = 'comment-note-actions'; // New class for styling
+
+                // Add delete button for comments (only if current user is author or admin)
+                if (isCurrentUserAdmin || comment.commenterId === userId) {
+                    const deleteCommentButton = document.createElement('button');
+                    deleteCommentButton.textContent = '×';
+                    deleteCommentButton.className = 'delete-button font-bold text-base'; // Smaller font for consistency
+                    deleteCommentButton.title = 'Delete Comment';
+                    deleteCommentButton.onclick = (e) => {
+                        e.stopPropagation();
+                        handleDeleteComment(taskIdForComments.value, index);
+                    };
+                    commentActionsDiv.appendChild(deleteCommentButton);
+                }
+                commentItem.appendChild(commentActionsDiv);
+
+                commentsList.appendChild(commentItem);
+            });
+            commentsList.scrollTop = commentsList.scrollHeight;
+        }
+
+        /**
+         * Adds a comment to the current task.
+         */
+        addCommentBtn.addEventListener('click', async () => {
+            const taskId = taskIdForComments.value;
+            const commentText = newCommentInput.value.trim();
+
+            if (!taskId || !currentProjectId || !commentText) {
+                // No modal for success, just return if input is empty
+                return;
+            }
+            if (!userId) {
+                showModal("You must be logged in to add comments.");
+                return;
+            }
+
+            try {
+                const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+                const newComment = {
+                    text: commentText,
+                    commenterId: userId,
+                    timestamp: new Date().toISOString()
+                };
+                await updateDoc(taskRef, {
+                    comments: arrayUnion(newComment)
+                });
+                newCommentInput.value = '';
+                // Automatically close the task details modal after adding a comment
+                taskDetailsModal.classList.add('hidden');
+                currentOpenTaskDetailsId = null; // Reset tracking of open task
+            } catch (error) {
+                console.error("Error adding comment:", error);
+                showModal("Failed to add comment."); // Keep modal for errors
+            }
+        });
+
+        /**
+         * Deletes a specific comment from a task.
+         * @param {string} taskId - The ID of the task containing the comment.
+         * @param {number} commentIndex - The index of the comment to delete in the comments array.
+         */
+        async function handleDeleteComment(taskId, commentIndex) {
+            if (!currentProjectId) {
+                // No modal for success, just return
+                return;
+            }
+
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const currentComments = taskDoc.data().comments || [];
+
+                    if (commentIndex >= 0 && commentIndex < currentComments.length) {
+                        // Check if current user is admin OR the author of the comment
+                        if (isCurrentUserAdmin || currentComments[commentIndex].commenterId === userId) {
+                            const updatedComments = currentComments.filter((_, i) => i !== commentIndex);
+                            await updateDoc(taskRef, { comments: updatedComments });
+                            // No modal for success, simply update UI implicitly via listener
+                        } else {
+                            showModal("You do not have permission to delete this comment."); // Keep modal for permission errors
+                        }
+                    } else {
+                        showModal("Error: Comment not found."); // Keep modal for errors
+                    }
+                } else {
+                    showModal("Error: Task not found."); // Keep modal for errors
+                }
+            } catch (error) {
+                console.error("Error deleting comment:", error);
+                showModal("Failed to delete comment."); // Keep modal for errors
+            }
+        }
+
+        /**
+         * NEW: Renders the list of task notes in the task details modal.
+         * @param {Array<Object>} notesArray - Array of note objects.
+         */
+        function renderTaskNotes(notesArray) {
+            taskNotesList.innerHTML = '';
+            if (notesArray.length === 0) {
+                taskNotesList.textContent = 'No notes yet.';
+                taskNotesList.classList.add('text-gray-500', 'italic');
+                return;
+            }
+            taskNotesList.classList.remove('text-gray-500', 'italic');
+            notesArray.sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
+            
+            notesArray.forEach((note, index) => {
+                const noteItem = document.createElement('div');
+                // Added relative positioning to noteItem for action buttons
+                noteItem.className = 'p-2 bg-white rounded-md shadow-sm mb-2 text-sm border-l-2 border-purple-300 relative';
+                
+                const noteHeader = document.createElement('div');
+                // Increased pr to 20 for more space
+                noteHeader.className = 'flex justify-between items-center mb-1 pr-20'; 
+                
+                const noteInfoSpan = document.createElement('span');
+                noteInfoSpan.className = 'font-semibold text-purple-700';
+                noteInfoSpan.textContent = `Note ${index + 1}: By ${getNickname(note.authorId)}`; 
+                noteHeader.appendChild(noteInfoSpan);
+
+                const timestampSpan = document.createElement('span');
+                timestampSpan.className = 'text-xs text-gray-500';
+                const date = new Date(note.timestamp);
+                timestampSpan.textContent = date.toLocaleDateString('en-US') + ' ' + date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
+                noteHeader.appendChild(timestampSpan);
+
+                noteItem.appendChild(noteHeader);
+
+                const noteTextP = document.createElement('p');
+                // Removed pr-6 from noteTextP
+                noteTextP.className = 'text-gray-800 break-words';
+                noteTextP.textContent = note.text;
+                noteItem.appendChild(noteTextP);
+
+                // Actions container for notes
+                const noteActionsDiv = document.createElement('div');
+                noteActionsDiv.className = 'comment-note-actions'; // Reusing the same class for consistent styling
+
+                if (isCurrentUserAdmin || note.authorId === userId) {
+                    const editNoteButton = document.createElement('button');
+                    editNoteButton.textContent = '✏️';
+                    editNoteButton.className = 'edit-button text-base'; // Smaller font for consistency
+                    editNoteButton.title = 'Edit Note';
+                    editNoteButton.onclick = (e) => {
+                        e.stopPropagation();
+                        openTaskNoteEditModal(taskIdForComments.value, index, note.text);
+                    };
+                    noteActionsDiv.appendChild(editNoteButton);
+
+                    const deleteNoteButton = document.createElement('button');
+                    deleteNoteButton.textContent = '×';
+                    deleteNoteButton.className = 'delete-button font-bold text-base'; // Smaller font for consistency
+                    deleteNoteButton.title = 'Delete Note';
+                    deleteNoteButton.onclick = (e) => {
+                        e.stopPropagation();
+                        handleDeleteTaskNote(taskIdForComments.value, index);
+                    };
+                    noteActionsDiv.appendChild(deleteNoteButton);
+                    noteItem.appendChild(noteActionsDiv);
+                }
+
+                taskNotesList.appendChild(noteItem);
+            });
+            taskNotesList.scrollTop = taskNotesList.scrollHeight;
+        }
+
+        /**
+         * NEW: Adds a note to the current task.
+         */
+        addTaskNoteBtn.addEventListener('click', async () => {
+            const taskId = taskIdForComments.value;
+            const noteText = newTaskNoteInput.value.trim();
+
+            if (!taskId || !currentProjectId || !noteText) {
+                showModal("Please enter a note.");
+                return;
+            }
+            if (!userId) {
+                showModal("You must be logged in to add notes.");
+                return;
+            }
+            if (!isCurrentUserProjectMember()) { 
+                showModal("You do not have permission to add task notes.");
+                return;
+            }
+
+            try {
+                const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+                const newTaskNote = {
+                    text: noteText,
+                    authorId: userId,
+                    timestamp: new Date().toISOString()
+                };
+                await updateDoc(taskRef, {
+                    notes: arrayUnion(newTaskNote)
+                });
+                newTaskNoteInput.value = '';
+            } catch (error) {
+                console.error("Error adding task note:", error);
+                showModal("Failed to add task note.");
+            }
+        });
+
+        /**
+         * NEW: Deletes a specific note from a task.
+         * @param {string} taskId - The ID of the task containing the note.
+         * @param {number} noteIndex - The index of the note to delete in the notes array.
+         */
+        async function handleDeleteTaskNote(taskId, noteIndex) {
+            if (!currentProjectId) {
+                showModal("No project selected.");
+                return;
+            }
+
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const currentNotes = taskDoc.data().notes || [];
+
+                    if (noteIndex >= 0 && noteIndex < currentNotes.length) {
+                        if (isCurrentUserAdmin || currentNotes[noteIndex].authorId === userId) {
+                            const updatedNotes = currentNotes.filter((_, i) => i !== noteIndex);
+                            await updateDoc(taskRef, { notes: updatedNotes });
+                            showModal("Note deleted successfully!");
+                        } else {
+                            showModal("You do not have permission to delete this note.");
+                        }
+                    } else {
+                        showModal("Error: Note not found.");
+                    }
+                } else {
+                    showModal("Error: Task not found.");
+                }
+            } catch (error) {
+                console.error("Error deleting note:", error);
+                showModal("Failed to delete note.");
+            }
+        }
+
+        // NEW: Handles opening the modal to edit an existing task note.
+        function openTaskNoteEditModal(taskId, noteIndex, currentNoteText) {
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to edit task notes.");
+                return;
+            }
+            editingTaskIdNoteModal.value = taskId;
+            editingNoteIndexModal.value = noteIndex;
+            taskNoteTextareaModal.value = currentNoteText;
+            taskNoteEditModal.classList.remove('hidden');
+            taskNoteTextareaModal.focus();
+        }
+
+        // NEW: Handles saving the edited task note to Firestore.
+        saveTaskNoteModalBtn.addEventListener('click', async () => {
+            const taskId = editingTaskIdNoteModal.value;
+            const noteIndex = parseInt(editingNoteIndexModal.value);
+            const newNoteContent = taskNoteTextareaModal.value.trim();
+
+            if (!taskId || isNaN(noteIndex) || !currentProjectId || !newNoteContent) {
+                showModal("Error: Task note information missing or content is empty.");
+                return;
+            }
+
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to save task note changes.");
+                return;
+            }
+
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const currentNotes = taskDoc.data().notes || [];
+                    if (noteIndex >= 0 && noteIndex < currentNotes.length) {
+                        if (isCurrentUserAdmin || currentNotes[noteIndex].authorId === userId) {
+                            currentNotes[noteIndex].text = newNoteContent;
+                            await updateDoc(taskRef, { notes: currentNotes });
+                            taskNoteEditModal.classList.add('hidden');
+                            showModal("Task note updated successfully!");
+                        } else {
+                            showModal("You do not have permission to edit this task note.");
+                        }
+                    } else {
+                        showModal("Error: Invalid task note index.");
+                    }
+                } else {
+                    showModal("Error: Task not found.");
+                }
+            } catch (error) {
+                console.error("Error saving task note:", error);
+                showModal("Failed to save task note.");
+            }
+        });
+
+        cancelTaskNoteModalBtn.addEventListener('click', () => {
+            taskNoteEditModal.classList.add('hidden');
+        });
+
+
+        closeTaskDetailsModalBtn.addEventListener('click', () => {
+            taskDetailsModal.classList.add('hidden');
+            currentOpenTaskDetailsId = null;
+        });
+
+
+        /**
+         * Handles the submission of the add task form.
+         * Adds a new task to Firestore if the user is a project member.
+         * @param {Event} e - The form submission event.
+         */
+        async function handleAddTask(e) {
+            e.preventDefault();
+            if (!isCurrentUserProjectMember() || !currentProjectId) {
+                showModal("You do not have permission to add tasks.");
+                return;
+            }
+            const taskText = taskInput.value.trim();
+            const taskDeadline = taskDeadlineInput.value;
+
+            if (taskText) {
+                try {
+                    const newTaskPosition = Date.now(); 
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`), { 
+                        text: taskText, 
+                        status: 'todo',
+                        createdAt: new Date().toISOString(),
+                        position: newTaskPosition,
+                        deadline: taskDeadline || null,
+                        subtasks: [],
+                        comments: [],
+                        notes: [] 
+                    });
+                    taskInput.value = '';
+                    taskDeadlineInput.value = '';
+                } catch (error) {
+                    console.error("Error adding task: ", error);
+                    showModal("Failed to add task.");
+                }
+            }
+        }
+
+        /**
+         * Handles adding a subtask to a specific task.
+         * @param {string} taskId - The ID of the parent task.
+         * @param {string} subtaskText - The content of the new subtask.
+         */
+        async function handleAddSubtask(taskId, subtaskText) {
+            if (!isCurrentUserProjectMember() || !currentProjectId || !subtaskText.trim()) {
+                showModal("You do not have permission to add subtasks.");
+                return;
+            }
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const currentSubtasks = taskDoc.data().subtasks || [];
+                    const newSubtaskPosition = Date.now(); 
+                    const updatedSubtasks = [...currentSubtasks, { text: subtaskText.trim(), isCompleted: false, note: '', color: 'default', position: newSubtaskPosition, reactions: [] }]; // Initialize reactions array
+                    await updateDoc(taskRef, { subtasks: updatedSubtasks });
+                }
+            } catch (error) {
+                console.error("Error adding subtask:", error);
+                showModal("Failed to add subtask.");
+            }
+        }
+
+        /**
+         * Handles toggling the completion status of a subtask.
+         * @param {string} taskId - The ID of the parent task.
+         * @param {number} subtaskIndex - The index of the subtask in the array.
+         */
+        async function handleToggleSubtask(taskId, subtaskIndex) {
+            if (!isCurrentUserProjectMember() || !currentProjectId) {
+                showModal("You do not have permission to change subtask status.");
+                return;
+            }
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const currentSubtasks = taskDoc.data().subtasks || [];
+                    if (subtaskIndex >= 0 && subtaskIndex < currentSubtasks.length) {
+                        currentSubtasks[subtaskIndex].isCompleted = !currentSubtasks[subtaskIndex].isCompleted;
+                        await updateDoc(taskRef, { subtasks: currentSubtasks });
+                    }
+                }
+            } catch (error) {
+                console.error("Error toggling subtask:", error);
+                showModal("Failed to toggle subtask status.");
+            }
+        }
+
+        /**
+         * Handles deleting a subtask from a task.
+         * @param {string} taskId - The ID of the parent task.
+         * @param {number} subtaskIndex - The index of the subtask to delete.
+         */
+        async function handleDeleteSubtask(taskId, subtaskIndex) {
+            if (!isCurrentUserProjectMember() || !currentProjectId) {
+                showModal("You do not have permission to delete subtasks.");
+                return;
+            }
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const currentSubtasks = taskDoc.data().subtasks || [];
+                    if (subtaskIndex >= 0 && subtaskIndex < currentSubtasks.length) {
+                        const updatedSubtasks = currentSubtasks.filter((_, i) => i !== subtaskIndex);
+                        await updateDoc(taskRef, { subtasks: updatedSubtasks });
+                    }
+                }
+            } catch (error) {
+                console.error("Error deleting subtask:", error);
+                showModal("Failed to delete subtask.");
+            }
+        }
+
+        /**
+         * NEW: Handles opening the subtask edit modal (text, note, color).
+         * @param {string} taskId - The ID of the parent task.
+         * @param {number} subtaskIndex - The index of the subtask.
+         * @param {string} currentText - The current subtask text.
+         * @param {string} currentNote - The current subtask note.
+         * @param {string} currentColor - The current subtask color.
+         */
+        function openSubtaskEditTextModal(taskId, subtaskIndex, currentText, currentNote, currentColor) {
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to edit subtasks.");
+                return;
+            }
+            editingTaskIdSubtext.value = taskId;
+            editingSubtaskIndexSubtext.value = subtaskIndex;
+            subtaskEditTextInput.value = currentText;
+            subtaskNoteOnEditModal.value = currentNote; 
+            
+            // Set the correct color radio button
+            subtaskColorRadios.forEach(radio => {
+                if (radio.value === currentColor) {
+                    radio.checked = true;
+                } else {
+                    radio.checked = false;
+                }
+            });
+
+            subtaskEditTextModal.classList.remove('hidden');
+            subtaskEditTextInput.focus();
+        }
+
+        /**
+         * NEW: Handles saving the edited subtask (text, note, color) to Firestore.
+         */
+        saveSubtaskTextBtn.addEventListener('click', async () => {
+            const taskId = editingTaskIdSubtext.value;
+            const subtaskIndex = parseInt(editingSubtaskIndexSubtext.value);
+            const newSubtaskText = subtaskEditTextInput.value.trim();
+            const newSubtaskNote = subtaskNoteOnEditModal.value.trim(); 
+            const newSubtaskColor = document.querySelector('input[name="subtask-color"]:checked').value; 
+
+            if (!taskId || isNaN(subtaskIndex) || !currentProjectId || !newSubtaskText) {
+                showModal("Error: Subtask information missing or content is empty.");
+                return;
+            }
+
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to save subtask changes.");
+                return;
+            }
+
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const currentSubtasks = taskDoc.data().subtasks || [];
+                    if (subtaskIndex >= 0 && subtaskIndex < currentSubtasks.length) {
+                        currentSubtasks[subtaskIndex].text = newSubtaskText;
+                        currentSubtasks[subtaskIndex].note = newSubtaskNote; 
+                        currentSubtasks[subtaskIndex].color = newSubtaskColor; 
+                        await updateDoc(taskRef, { subtasks: currentSubtasks });
+                        subtaskEditTextModal.classList.add('hidden');
+                        showModal("Subtask changes saved successfully!");
+                    } else {
+                        showModal("Error: Invalid subtask index.");
+                    }
+                } else {
+                    showModal("Error: Task not found.");
+                }
+            } catch (error) {
+                console.error("Error saving subtask changes:", error);
+                showModal("Failed to save subtask changes.");
+            }
+        });
+
+        cancelSubtaskTextBtn.addEventListener('click', () => {
+            subtaskEditTextModal.classList.add('hidden');
+        });
+
+        /**
+         * NEW: Toggles a reaction on a specific subtask.
+         * If the user has already reacted with this type, it removes their reaction.
+         * Otherwise, it adds their reaction.
+         * @param {string} taskId - The ID of the parent task.
+         * @param {number} subtaskIndex - The index of the subtask in the array.
+         * @param {string} reactionType - The type of reaction ('like', 'handling', 'note').
+         */
+        async function toggleSubtaskReaction(taskId, subtaskIndex, reactionType) {
+            if (!userId || !currentProjectId) {
+                showModal("You must be logged in to react.");
+                return;
+            }
+            if (!isUserAllowedToReact()) { // Only users with defined nicknames can react
+                showModal("You do not have permission to react to subtasks.");
+                return;
+            }
+
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (taskDoc.exists()) {
+                    const taskData = taskDoc.data();
+                    const currentSubtasks = [...(taskData.subtasks || [])];
+
+                    if (subtaskIndex >= 0 && subtaskIndex < currentSubtasks.length) {
+                        const subtask = { ...currentSubtasks[subtaskIndex] }; 
+                        let currentReactions = [...(subtask.reactions || [])]; 
+
+                        const existingReactionIndex = currentReactions.findIndex(
+                            r => r.type === reactionType && r.reactorId === userId
+                        );
+
+                        if (existingReactionIndex > -1) {
+                            // User already reacted with this type, remove it
+                            currentReactions.splice(existingReactionIndex, 1);
+                        } else {
+                            // User has not reacted with this type, add it
+                            currentReactions.push({
+                                type: reactionType,
+                                reactorId: userId,
+                                timestamp: new Date().toISOString()
+                            });
+                        }
+                        
+                        subtask.reactions = currentReactions;
+                        currentSubtasks[subtaskIndex] = subtask; 
+
+                        await updateDoc(taskRef, { subtasks: currentSubtasks });
+                    }
+                }
+            } catch (error) {
+                console.error(`Error toggling ${reactionType} reaction:`, error);
+                showModal(`Failed to toggle ${reactionType} reaction.`);
+            }
+        }
+
+
+        /**
+         * Updates the status of a task in Firestore.
+         * Triggers confetti if the task is moved to 'done'.
+         * @param {string} taskId - The ID of the task to update.
+         * @param {string} newStatus - The new status ('todo', 'inprogress', 'done').
+         * @param {number} [newPosition] - Optional: the new position for reordering within the column.
+         */
+        async function handleUpdateTaskStatus(taskId, newStatus, newPosition = null) {
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to move tasks.");
+                return;
+            }
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            try {
+                const updateData = { status: newStatus };
+                if (newStatus === 'done') {
+                    updateData.completedAt = new Date().toISOString();
+                    triggerConfetti();
+                } else {
+                    updateData.completedAt = null;
+                }
+                if (newPosition !== null) {
+                    updateData.position = newPosition;
+                }
+                await updateDoc(taskRef, updateData);
+            } catch (error) {
+                    console.error("Error updating task: ", error);
+                showModal("Failed to update task status.");
+            }
+        }
+
+        /**
+         * Deletes a task from Firestore.
+         * @param {string} taskId - The ID of the task to delete.
+         */
+        async function handleDeleteTask(taskId) {
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to delete tasks.");
+                return;
+            }
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+            try {
+                await deleteDoc(taskRef);
+            } catch (error) {
+                console.error("Error deleting task: ", error);
+                showModal("Failed to delete task.");
+            }
+        }
+
+        // --- Drag and Drop Logic (for status change & reordering) ---
+        
+        /**
+         * Handles the start of a drag operation for a task.
+         * @param {Event} } e - The dragstart event.
+         */
+        function handleDragStart(e) {
+            if (!isCurrentUserProjectMember()) {
+                e.preventDefault();
+                return;
+            }
+            draggedTaskId = e.target.getAttribute('data-id');
+            draggedTaskStatus = e.target.getAttribute('data-status');
+            draggedTaskOriginalPosition = parseFloat(e.target.getAttribute('data-position'));
+            e.target.classList.add('dragging');
+            e.dataTransfer.effectAllowed = 'move';
+        }
+
+        /**
+         * Handles the end of a drag operation.
+         * @param {Event} e - The dragend event.
+         */
+        function handleDragEnd(e) {
+            e.target.classList.remove('dragging');
+            document.querySelectorAll('.task-card.drag-over-target').forEach(el => el.classList.remove('drag-over-target'));
+            document.querySelectorAll('.kanban-column.drag-over-empty').forEach(el => el.classList.remove('drag-over-empty'));
+            draggedTaskId = null;
+            draggedTaskStatus = null;
+            draggedTaskOriginalPosition = null;
+        }
+
+        /**
+         * Handles dragover event on Kanban columns (for status change).
+         * @param {Event} e - The dragover event.
+         */
+        function handleDragOverColumn(e) {
+            e.preventDefault();
+            if (!isCurrentUserProjectMember()) return;
+            const column = e.currentTarget;
+            const taskList = column.querySelector('.task-list');
+            if (taskList && taskList.children.length === 0) {
+                column.classList.add('drag-over-empty');
+            } else {
+                column.classList.remove('drag-over-empty');
+            }
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        /**
+         * Handles drop event on Kanban columns (for status change).
+         * @param {Event} e - The drop event.
+         */
+        async function handleDropColumn(e) {
+            e.preventDefault();
+            if (!isCurrentUserProjectMember()) return;
+            if (!draggedTaskId || !currentProjectId) return;
+
+            const targetColumn = e.currentTarget;
+            const newStatus = targetColumn.getAttribute('data-status');
+
+            if (newStatus !== draggedTaskStatus) {
+                try {
+                    const tasksInNewColumn = tasks.filter(t => t.status === newStatus);
+                    const newPosition = tasksInNewColumn.length > 0 ? 
+                                        Math.max(...tasksInNewColumn.map(t => t.position)) + 1 : 
+                                        Date.now();
+                    await handleUpdateTaskStatus(draggedTaskId, newStatus, newPosition);
+                } catch (error) {
+                    console.error("Error changing task status:", error);
+                    showModal("Failed to change task status.");
+                }
+            }
+            targetColumn.classList.remove('drag-over-empty');
+        }
+
+        /**
+         * Handles dragenter event on a task card (for reordering highlight).
+         * @param {Event} e - The dragenter event.
+         */
+        function handleDragEnter(e) {
+            e.preventDefault();
+            if (!isCurrentUserProjectMember() || e.target.getAttribute('data-id') === draggedTaskId) return;
+
+            const targetTask = e.target.closest('.task-card');
+            if (targetTask && targetTask.getAttribute('data-status') === draggedTaskStatus) {
+                targetTask.classList.add('drag-over-target');
+            }
+        }
+
+        /**
+         * Handles dragleave event on a task card (for reordering highlight).
+         * @param {Event} e - The dragleave event.
+         */
+        function handleDragLeave(e) {
+            if (e.target.getAttribute('data-id') === draggedTaskId) return;
+            e.target.closest('.task-card')?.classList.remove('drag-over-target');
+        }
+
+        /**
+         * Handles dragover event on a task card (for reordering).
+         * @param {Event} e - The dragover event.
+         */
+        function handleDragOverTask(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        /**
+         * Handles drop event on a task card (for reordering within a column).
+         * @param {Event} e - The drop event.
+         */
+        async function handleDropTask(e) {
+            e.preventDefault();
+            if (!isCurrentUserProjectMember() || !draggedTaskId || !currentProjectId) return;
+
+            const targetTaskElement = e.target.closest('.task-card');
+            if (!targetTaskElement || targetTaskElement.getAttribute('data-id') === draggedTaskId) {
+                return;
+            }
+
+            const targetTaskId = targetTaskElement.getAttribute('data-id');
+            const targetTaskStatus = targetTaskElement.getAttribute('data-status');
+            
+            if (targetTaskStatus !== draggedTaskStatus) {
+                return;
+            }
+
+            const targetTask = tasks.find(t => t.id === targetTaskId);
+            const draggedTask = tasks.find(t => t.id === draggedTaskId);
+
+            if (!targetTask || !draggedTask) {
+                showModal("Error: Dragged task or target task not found.");
+                return;
+            }
+
+            const siblingTasks = tasks
+                .filter(t => t.status === draggedTaskStatus && t.id !== draggedTaskId)
+                .sort((a, b) => a.position - b.position);
+
+            const targetIndex = siblingTasks.findIndex(t => t.id === targetTaskId);
+
+            let newPosition;
+            const taskRect = targetTaskElement.getBoundingClientRect();
+            const mouseRelativeY = e.clientY - taskRect.top;
+
+            if (siblingTasks.length === 0) {
+                newPosition = Date.now();
+            } else if (mouseRelativeY < taskRect.height / 2) {
+                const prevTask = siblingTasks[targetIndex - 1];
+                if (prevTask) {
+                    newPosition = (prevTask.position + targetTask.position) / 2;
+                } else {
+                    newPosition = targetTask.position / 2;
+                }
+            } else {
+                const nextTask = siblingTasks[targetIndex + 1];
+                if (nextTask) {
+                    newPosition = (targetTask.position + nextTask.position) / 2;
+                } else {
+                    newPosition = targetTask.position + 1;
+                }
+            }
+            
+            if (newPosition === draggedTaskOriginalPosition) {
+                targetTaskElement.classList.remove('drag-over-target');
+                return;
+            }
+
+            const existingPositions = tasks.filter(t => t.status === draggedTaskStatus).map(t => t.position);
+            while (existingPositions.includes(newPosition)) {
+                newPosition += 0.000001;
+            }
+
+            await handleUpdateTaskStatus(draggedTaskId, draggedTaskStatus, newPosition);
+            targetTaskElement.classList.remove('drag-over-target');
+        }
+
+        columns.forEach(column => {
+            column.addEventListener('dragover', handleDragOverColumn);
+            column.addEventListener('drop', handleDropColumn);
+        });
+
+        // --- NEW: Subtask Drag and Drop Logic ---
+
+        /**
+         * Handles the start of a drag operation for a subtask.
+         * @param {Event} e - The dragstart event.
+         */
+        function handleSubtaskDragStart(e) {
+            if (!isCurrentUserProjectMember()) {
+                e.preventDefault();
+                return;
+            }
+            const subtaskItem = e.target.closest('.subtask-item');
+            const taskId = subtaskItem.getAttribute('data-task-id');
+            const subtaskIndex = parseInt(subtaskItem.getAttribute('data-subtask-index'));
+
+            const task = tasks.find(t => t.id === taskId);
+            if (task && task.subtasks && task.subtasks[subtaskIndex]) {
+                draggedSubtaskInfo.taskId = taskId;
+                draggedSubtaskInfo.subtaskObject = { ...task.subtasks[subtaskIndex] }; 
+                draggedSubtaskInfo.originalIndex = subtaskIndex;
+                subtaskItem.classList.add('dragging');
+                e.dataTransfer.effectAllowed = 'move';
+            } else {
+                e.preventDefault(); 
+            }
+        }
+
+        /**
+         * Handles the end of a drag operation for a subtask.
+         * @param {Event} e - The dragend event.
+         */
+        function handleSubtaskDragEnd(e) {
+            e.target.classList.remove('dragging');
+            document.querySelectorAll('.subtask-item.drag-over-subtask').forEach(el => el.classList.remove('drag-over-subtask'));
+            draggedSubtaskInfo = { taskId: null, subtaskObject: null, originalIndex: null };
+        }
+
+        /**
+         * Handles dragenter event on a subtask (for reordering highlight).
+         * @param {Event} e - The dragenter event.
+         */
+        function handleSubtaskDragEnter(e) {
+            e.preventDefault();
+            const targetSubtaskItem = e.target.closest('.subtask-item');
+            if (!targetSubtaskItem || targetSubtaskItem.getAttribute('data-subtask-index') === String(draggedSubtaskInfo.originalIndex)) return;
+
+            // Ensure it's the same parent task
+            if (targetSubtaskItem.getAttribute('data-task-id') === draggedSubtaskInfo.taskId) {
+                targetSubtaskItem.classList.add('drag-over-subtask');
+            }
+        }
+
+        /**
+         * Handles dragleave event on a subtask (for reordering highlight).
+         * @param {Event} e - The dragleave event.
+         */
+        function handleSubtaskDragLeave(e) {
+            const targetSubtaskItem = e.target.closest('.subtask-item');
+            if (targetSubtaskItem && targetSubtaskItem.getAttribute('data-subtask-index') === String(draggedSubtaskInfo.originalIndex)) return;
+            targetSubtaskItem?.classList.remove('drag-over-subtask');
+        }
+
+        /**
+         * Handles dragover event on a subtask (for reordering).
+         * @param {Event} e - The dragover event.
+         */
+        function handleSubtaskDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+        }
+
+        /**
+         * Handles drop event on a subtask (for reordering within a task).
+         * @param {Event} e - The drop event.
+         */
+        async function handleSubtaskDrop(e) {
+            e.preventDefault();
+            if (!isCurrentUserProjectMember() || !draggedSubtaskInfo.taskId || draggedSubtaskInfo.subtaskObject === null || !currentProjectId) return;
+
+            const targetSubtaskItem = e.target.closest('.subtask-item');
+            if (!targetSubtaskItem || targetSubtaskItem.getAttribute('data-task-id') !== draggedSubtaskInfo.taskId) {
+                showModal("Subtasks can only be reordered within their parent task.");
+                targetSubtaskItem?.classList.remove('drag-over-subtask');
+                return;
+            }
+
+            const targetSubtaskIndex = parseInt(targetSubtaskItem.getAttribute('data-subtask-index'));
+            
+            const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, draggedSubtaskInfo.taskId);
+            try {
+                const taskDoc = await getDoc(taskRef);
+                if (!taskDoc.exists()) {
+                    showModal("Error: Parent task not found for subtask reordering.");
+                    targetSubtaskItem?.classList.remove('drag-over-subtask');
+                    return;
+                }
+                let currentSubtasks = taskDoc.data().subtasks || [];
+                
+                // Prevent dropping onto itself
+                if (draggedSubtaskInfo.originalIndex === targetSubtaskIndex) {
+                    targetSubtaskItem.classList.remove('drag-over-subtask');
+                    return;
+                }
+
+                // 1. Remove the dragged subtask from its original position
+                const [removedSubtask] = currentSubtasks.splice(draggedSubtaskInfo.originalIndex, 1);
+
+                // 2. Insert the dragged subtask at the new calculated position
+                let newIndex = targetSubtaskIndex;
+                // Adjust index if we removed an item from an earlier position
+                if (draggedSubtaskInfo.originalIndex < targetSubtaskIndex) {
+                    newIndex = targetSubtaskIndex - 1; 
+                }
+                currentSubtasks.splice(newIndex, 0, removedSubtask);
+
+                // 3. Re-assign positions based on the new order
+                // This is crucial to keep the client-side sorting in sync with Firestore's (conceptual) order
+                currentSubtasks = currentSubtasks.map((sub, idx) => ({ ...sub, position: idx * 1000 }));
+
+                await updateDoc(taskRef, { subtasks: currentSubtasks });
+                showModal("Subtask reordered successfully!");
+
+            } catch (error) {
+                console.error("Error reordering subtask:", error);
+                showModal("Failed to reorder subtask.");
+            } finally {
+                targetSubtaskItem?.classList.remove('drag-over-subtask');
+            }
+        }
+
+
+        // --- Confetti Animation ---
+        /**
+         * Triggers a confetti animation for celebration.
+         * Creates multiple confetti pieces with random properties.
+         */
+        function triggerConfetti() {
+            const container = document.getElementById('confetti-container');
+            const colors = ['#ef4444', '#f97316', '#eab308', '#84cc16', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6', '#8b5cf6', '#d946ef'];
+            for (let i = 0; i < 100; i++) {
+                const confetti = document.createElement('div');
+                confetti.classList.add('confetti');
+                confetti.style.left = `${Math.random() * 100}vw`;
+                confetti.style.backgroundColor = colors[Math.floor(Math.random() * colors.length)];
+                confetti.style.animationDuration = `${Math.random() * 2 + 3}s`;
+                confetti.style.animationDelay = `${Math.random() * 1}s`;
+                container.appendChild(confetti);
+                setTimeout(() => confetti.remove(), 5000); 
+            }
+        }
+        
+        // --- Custom Modal Logic (replaces alert/confirm) ---
+        const modal = document.getElementById('custom-modal');
+        const modalMessage = document.getElementById('modal-message');
+        const modalCloseBtn = document.getElementById('modal-close-btn');
+
+        /**
+         * Displays a custom modal with a given message.
+         * @param {string} message - The message to display in the modal.
+         */
+        function showModal(message) {
+            modalMessage.textContent = message;
+            modal.classList.remove('hidden');
+        }
+
+        modalCloseBtn.addEventListener('click', () => modal.classList.add('hidden'));
+
+        // --- Comment Notification Toast ---
+        let toastTimeout;
+        /**
+         * Shows a toast notification for a new comment.
+         * @param {string} projectName - The name of the project.
+         * @param {string} taskName - The name of the task.
+         * @param {string} taskStatus - The status (Kanban column) of the task.
+         * @param {string} commentText - The text of the new comment.
+         */
+        function showCommentToast(projectName, taskName, taskStatus, commentText) {
+            clearTimeout(toastTimeout); // Clear any existing timeout
+            
+            toastProjectName.textContent = projectName;
+            toastTaskName.textContent = taskName;
+            toastTaskStatus.textContent = taskStatus; // Set the task status
+            toastCommentText.textContent = `"${commentText}"`;
+
+            // Ensure the toast is always 'show' (visible) when active, whether expanded or collapsed
+            commentToast.classList.add('show'); 
+            commentToast.classList.remove('collapsed'); // Start expanded
+
+            toastTimeout = setTimeout(() => {
+                commentToast.classList.add('collapsed'); // Collapse after 5 seconds
+            }, 5000); 
+        }
+
+        // Event listener for clicking anywhere on the toast (except the toggle button itself)
+        commentToast.addEventListener('click', (e) => {
+            // Check if the click target is NOT the toggle button itself
+            if (e.target !== toggleToastButton) {
+                commentToast.classList.toggle('collapsed');
+                // When manually interacting, clear the auto-collapse timeout
+                clearTimeout(toastTimeout); 
+            }
+        });
+
+        // Toggle button for toast (specifically for clicking the button)
+        toggleToastButton.addEventListener('click', (e) => {
+            e.stopPropagation(); // Prevent the click from bubbling up to the toast's general click listener
+            commentToast.classList.toggle('collapsed');
+            clearTimeout(toastTimeout); // Prevent auto-collapse if user manually toggles
+        });
+
+        let reactionToastTimeout; // Declare this outside to be accessible by event listeners
+        /**
+         * NEW: Shows a toast notification for a new reaction.
+         * @param {string} projectName - The name of the project.
+         * @param {string} taskText - The text of the task.
+         * @param {string} subtaskText - The text of the subtask.
+         * @param {string} reactorNickname - The nickname of the user who reacted.
+         * @param {string} reactionType - The type of reaction ('like', 'handling', 'note').
+         */
+        function showReactionToast(projectName, taskText, subtaskText, reactorNickname, reactionType) {
+            if (reactorNickname === getNickname(userId)) { // Don't show toast for self-reactions
+                return;
+            }
+
+            clearTimeout(reactionToastTimeout);
+            
+            reactionToastProjectName.textContent = projectName;
+            reactionToastTaskName.textContent = taskText;
+            reactionToastSubtaskText.textContent = subtaskText;
+            reactionToastReactorNickname.textContent = reactorNickname;
+            reactionToastType.textContent = `${reactionEmojis[reactionType]} ${reactionNames[reactionType]}`;
+
+            reactionToast.classList.add('show');
+            reactionToast.classList.remove('collapsed');
+
+            reactionToastTimeout = setTimeout(() => {
+                reactionToast.classList.add('collapsed');
+            }, 5000); 
+        }
+
+        reactionToast.addEventListener('click', (e) => {
+            if (e.target !== toggleReactionToastButton) {
+                reactionToast.classList.toggle('collapsed');
+                clearTimeout(reactionToastTimeout);
+            }
+        });
+
+        toggleReactionToastButton.addEventListener('click', (e) => {
+            e.stopPropagation();
+            reactionToast.classList.toggle('collapsed');
+            clearTimeout(reactionToastTimeout);
+        });
+
+        // --- NEW: Recent Events Logic ---
+
+        /**
+         * Generates a unique ID for an event to prevent duplicates.
+         * @param {Object} event - The event object.
+         * @returns {string} A unique string ID for the event.
+         */
+        function generateEventUniqueId(event) {
+            if (event.type === 'comment') {
+                return `comment-${event.projectId}-${event.taskId}-${event.timestamp}-${event.commenterId}-${event.commentText}`;
+            } else if (event.type === 'reaction') {
+                return `reaction-${event.projectId}-${event.taskId}-${event.subtaskText}-${event.reactionType}-${event.reactorId}-${event.timestamp}`;
+            }
+            return `unknown-${Date.now()}-${Math.random()}`; // Fallback
+        }
+
+        /**
+         * Adds a new event (comment or reaction) to the recentEvents array.
+         * Maintains the array size up to MAX_RECENT_EVENTS and keeps it sorted by timestamp.
+         * @param {Object} event - The event object to add.
+         */
+        function addEventToRecentEvents(event) {
+            const uniqueId = generateEventUniqueId(event);
+            if (recentEvents.some(e => e.uniqueId === uniqueId)) {
+                return; // Event already exists, skip adding
+            }
+
+            const newEvent = { ...event, uniqueId: uniqueId }; // Add uniqueId to the event
+            recentEvents.push(newEvent);
+            // Sort by timestamp in descending order (newest first)
+            recentEvents.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+            // Keep only the latest MAX_RECENT_EVENTS
+            if (recentEvents.length > MAX_RECENT_EVENTS) {
+                recentEvents = recentEvents.slice(0, MAX_RECENT_EVENTS);
+            }
+        }
+
+        /**
+         * Loads all comments and reactions from all projects into recentEvents.
+         * This runs once on authentication to provide a comprehensive history.
+         */
+        async function loadInitialRecentEvents() {
+            recentEvents = []; // Clear previous events
+            try {
+                const projectsSnapshot = await getDocs(projectsCollectionRef);
+                const allEvents = [];
+
+                for (const projectDoc of projectsSnapshot.docs) {
+                    const projectId = projectDoc.id;
+                    const projectName = projectDoc.data().name || 'Unknown Project';
+                    const tasksCollectionRef = collection(db, `artifacts/${appId}/public/data/projects/${projectId}/tasks`);
+                    const tasksSnapshot = await getDocs(tasksCollectionRef);
+
+                    tasksSnapshot.docs.forEach(taskDoc => {
+                        const taskData = taskDoc.data();
+                        const taskId = taskDoc.id;
+                        const taskText = taskData.text;
+                        const taskStatus = taskData.status;
+
+                        // Add comments
+                        if (taskData.comments) {
+                            taskData.comments.forEach(comment => {
+                                allEvents.push({
+                                    type: 'comment',
+                                    timestamp: comment.timestamp,
+                                    projectId: projectId,
+                                    projectName: projectName,
+                                    taskId: taskId,
+                                    taskText: taskText,
+                                    taskStatus: taskStatus,
+                                    commenterId: comment.commenterId,
+                                    commentText: comment.text
+                                });
+                            });
+                        }
+
+                        // Add reactions
+                        if (taskData.subtasks) {
+                            taskData.subtasks.forEach(subtask => {
+                                if (subtask.reactions) {
+                                    subtask.reactions.forEach(reaction => {
+                                        allEvents.push({
+                                            type: 'reaction',
+                                            timestamp: reaction.timestamp,
+                                            projectId: projectId,
+                                            projectName: projectName,
+                                            taskId: taskId,
+                                            taskText: taskText,
+                                            subtaskText: subtask.text,
+                                            reactorId: reaction.reactorId,
+                                            reactionType: reaction.type
+                                        });
+                                    });
+                                }
+                            });
+                        }
+                    });
+                }
+
+                // Add all collected events to recentEvents, allowing addEventToRecentEvents to handle sorting and trimming
+                allEvents.forEach(event => addEventToRecentEvents(event));
+
+            } catch (error) {
+                console.error("Error loading initial recent events:", error);
+            }
+        }
+
+
+        /**
+         * Opens the Recent Events modal and renders the events.
+         */
+        function openRecentEventsModal() {
+            renderRecentEvents();
+            recentEventsModal.classList.remove('hidden');
+        }
+
+        /**
+         * Renders the recent events list in the modal.
+         */
+        function renderRecentEvents() {
+            recentEventsList.innerHTML = '';
+            if (recentEvents.length === 0) {
+                recentEventsList.textContent = 'No recent events.';
+                recentEventsList.classList.add('text-gray-500', 'italic', 'text-center', 'py-4');
+                return;
+            }
+            recentEventsList.classList.remove('text-gray-500', 'italic', 'text-center', 'py-4');
+
+            recentEvents.forEach(event => {
+                const eventItem = document.createElement('div');
+                eventItem.className = 'p-2 bg-white rounded-md shadow-sm mb-2 text-sm border-l-2';
+                
+                const timestamp = new Date(event.timestamp).toLocaleString('en-US', {
+                    hour: '2-digit', minute: '2-digit', day: '2-digit', month: 'short', year: 'numeric'
+                });
+                const eventHeader = document.createElement('p');
+                eventHeader.className = 'text-xs text-gray-500 mb-1';
+                eventHeader.textContent = `${timestamp} - Project: ${event.projectName}`;
+                eventItem.appendChild(eventHeader);
+
+                const eventContent = document.createElement('p');
+                eventContent.className = 'text-gray-800 break-words font-semibold';
+
+                if (event.type === 'comment') {
+                    eventItem.classList.add('border-blue-300');
+                    eventContent.innerHTML = `💬 <span class="text-blue-700">${getNickname(event.commenterId)}</span> commented on task "<span class="italic">${event.taskText}</span>" (Status: <span class="capitalize">${event.taskStatus}</span>): "${event.commentText}"`;
+                } else if (event.type === 'reaction') {
+                    eventItem.classList.add('border-purple-300');
+                    eventContent.innerHTML = `${reactionEmojis[event.reactionType]} <span class="text-purple-700">${getNickname(event.reactorId)}</span> reacted to subtask "<span class="italic">${event.subtaskText}</span>" in task "<span class="italic">${event.taskText}</span>" with <span class="font-bold">${reactionNames[event.reactionType]}</span>.`;
+                }
+                eventItem.appendChild(eventContent);
+                recentEventsList.appendChild(eventItem);
+            });
+            recentEventsList.scrollTop = recentEventsList.scrollHeight; // Scroll to bottom to show newest
+        }
+
+        // Event listeners for Recent Events modal
+        recentEventsBtn.addEventListener('click', openRecentEventsModal);
+        closeRecentEventsModalBtn.addEventListener('click', () => {
+            recentEventsModal.classList.add('hidden');
+        });
+
+        // --- Project Management Logic ---
+        createProjectBtn.addEventListener('click', () => {
+            if (!isCurrentUserAdmin) {
+                showModal("You do not have permission to create new projects.");
+                return;
+            }
+            projectModalTitle.textContent = "Create New Project";
+            newProjectNameInput.value = '';
+            projectDescriptionInput.value = '';
+            projectStartDateInput.value = '';
+            projectEndDateInput.value = '';
+            projectStatusSelect.value = 'Active';
+            confirmCreateProjectBtn.textContent = "Create Project";
+            editingProjectIdInput.value = '';
+            copyTasksFromProjectSelect.value = '';
+
+            createProjectModal.classList.remove('hidden');
+            newProjectNameInput.focus();
+        });
+
+        editProjectBtn.addEventListener('click', () => {
+            if (!isCurrentUserAdmin) {
+                showModal("You do not have permission to edit projects.");
+                return;
+            }
+            if (!currentProjectId) {
+                showModal("Please select a project to edit.");
+                return;
+            }
+            const projectToEdit = projectsData[currentProjectId];
+            if (projectToEdit) {
+                projectModalTitle.textContent = "Edit Project Details";
+                newProjectNameInput.value = projectToEdit.name || '';
+                projectDescriptionInput.value = projectToEdit.description || '';
+                projectStartDateInput.value = projectToEdit.startDate || '';
+                projectEndDateInput.value = projectToEdit.endDate || '';
+                projectStatusSelect.value = projectToEdit.status || 'Active';
+                confirmCreateProjectBtn.textContent = "Save Changes";
+                editingProjectIdInput.value = projectToEdit.id;
+                copyTasksFromProjectSelect.value = '';
+
+            } else {
+                showModal("Error: Project data not found for editing.");
+            }
+            createProjectModal.classList.remove('hidden');
+            newProjectNameInput.focus();
+        });
+
+        deleteProjectBtn.addEventListener('click', async () => {
+            if (!isCurrentUserAdmin) {
+                showModal("You do not have permission to delete projects.");
+                return;
+            }
+            if (!currentProjectId) {
+                showModal("Please select a project to delete.");
+                return;
+            }
+            const project = projectsData[currentProjectId];
+            if (project) {
+                promptDeleteConfirmation(currentProjectId, project.name);
+            } else {
+                showModal("Error: Project data not found for deletion.");
+            }
+        });
+
+        /**
+         * Displays a custom confirmation modal for project deletion.
+         * @param {string} projectId - The ID of the project to delete.
+         * @param {string} projectName - The name of the project to display in the message.
+         */
+        function promptDeleteConfirmation(projectId, projectName) {
+            projectIdToDelete = projectId;
+            deleteConfirmMessage.textContent = `Are you sure you want to delete project "${projectName}"? This action will delete all its tasks and cannot be undone.`;
+            deleteProjectConfirmModal.classList.remove('hidden');
+        }
+
+        confirmDeleteYesBtn.addEventListener('click', async () => {
+            deleteProjectConfirmModal.classList.add('hidden');
+            if (projectIdToDelete) {
+                await executeProjectDeletion(projectIdToDelete);
+                projectIdToDelete = null;
+            }
+        });
+
+        confirmDeleteNoBtn.addEventListener('click', () => {
+            deleteProjectConfirmModal.classList.add('hidden');
+            projectIdToDelete = null;
+        });
+
+        /**
+         * Executes the actual project deletion from Firestore.
+         * @param {string} projectId - The ID of the project to delete.
+         */
+        async function executeProjectDeletion(projectId) {
+            console.log(`Attempting to delete project: ${projectId}`);
+            try {
+                console.log(`Querying tasks for project: ${projectId}`);
+                const tasksQueryRef = collection(db, `artifacts/${appId}/public/data/projects/${projectId}/tasks`);
+                const tasksSnapshot = await getDocs(tasksQueryRef);
+
+                console.log(`Found ${tasksSnapshot.docs.length} tasks to delete.`);
+                const deleteTasksPromises = tasksSnapshot.docs.map(taskDoc => deleteDoc(taskDoc.ref));
+                await Promise.all(deleteTasksPromises);
+                console.log("All tasks deleted successfully.");
+
+                console.log(`Deleting project document: ${projectId}`);
+                await deleteDoc(doc(db, `artifacts/${appId}/public/data/projects`, projectId));
+                console.log("Project document deleted successfully.");
+                
+                showModal("Project deleted successfully!");
+                currentProjectId = null;
+            } catch (error) {
+                console.error("Error deleting project:", error);
+                if (error.code === 'permission-denied') {
+                    showModal("Permission error: You do not have permission to delete this project. Please check your admin role and Firestore security rules.");
+                } else {
+                    showModal(`Failed to delete project: ${error.message}`);
+                }
+            }
+        }
+
+        confirmCreateProjectBtn.addEventListener('click', async () => {
+            const projectName = newProjectNameInput.value.trim();
+            const projectDescription = projectDescriptionInput.value.trim();
+            const projectStartDate = projectStartDateInput.value;
+            const projectEndDate = projectEndDateInput.value;
+            const projectStatus = projectStatusSelect.value;
+            const projectIdToModify = editingProjectIdInput.value;
+            const sourceProjectIdToCopy = copyTasksFromProjectSelect.value;
+
+            if (!isCurrentUserAdmin) {
+                showModal("You do not have permission to save projects.");
+                return;
+            }
+
+            if (projectName && projectStartDate && projectEndDate) {
+                if (new Date(projectStartDate) > new Date(projectEndDate)) {
+                    showModal("End Date cannot be before Start Date.");
+                    return;
+                }
+                try {
+                    const projectData = {
+                        name: projectName,
+                        description: projectDescription,
+                        startDate: projectStartDate,
+                        endDate: projectEndDate,
+                        status: projectStatus,
+                    };
+
+                    if (projectIdToModify) {
+                        const projectRef = doc(db, `artifacts/${appId}/public/data/projects`, projectIdToModify);
+                        await updateDoc(projectRef, projectData);
+                        showModal("Project updated successfully!");
+                    } else {
+                        projectData.createdBy = userId;
+                        projectData.createdAt = new Date().toISOString();
+                        projectData.members = [userId];
+                        const docRef = await addDoc(collection(db, `artifacts/${appId}/public/data/projects`), projectData);
+                        const newProjectId = docRef.id;
+                        currentProjectId = newProjectId;
+                        projectSelect.value = newProjectId;
+                        showModal("Project created successfully!");
+
+                        if (sourceProjectIdToCopy) {
+                            await copyTodoTasks(sourceProjectIdToCopy, newProjectId);
+                        }
+                    }
+                    createProjectModal.classList.add('hidden');
+                } catch (error) {
+                    console.error("Error saving project:", error);
+                    showModal("Failed to save project.");
+                }
+            } else {
+                showModal("Project Name, Start Date, and End Date are required.");
+            }
+        });
+
+        /**
+         * Function to copy a single task to the current project
+         * @param {string} taskId - The ID of the task to copy.
+         */
+        async function handleCopyTask(taskId) {
+            if (!isCurrentUserProjectMember()) {
+                showModal("You do not have permission to copy tasks.");
+                return;
+            }
+
+            try {
+                const taskRef = doc(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`, taskId);
+                const taskDoc = await getDoc(taskRef);
+
+                if (taskDoc.exists()) {
+                    const originalTaskData = taskDoc.data();
+                    const copiedTaskData = {
+                        text: `Copy of ${originalTaskData.text}`,
+                        status: 'todo',
+                        createdAt: new Date().toISOString(),
+                        position: Date.now(),
+                        deadline: originalTaskData.deadline || null,
+                        subtasks: originalTaskData.subtasks.map(sub => ({
+                            text: sub.text,
+                            isCompleted: false,
+                            note: sub.note || '',
+                            color: sub.color || 'default', 
+                            position: sub.position || Date.now() + Math.random(),
+                            reactions: [] // Ensure copied subtasks start with no reactions
+                        })),
+                        comments: [],
+                        notes: [] 
+                    };
+                    await addDoc(collection(db, `artifacts/${appId}/public/data/projects/${currentProjectId}/tasks`), copiedTaskData);
+                    showModal("Task copied successfully!");
+                } else {
+                    showModal("Task not found to copy.");
+                }
+            } catch (error) {
+                console.error("Error copying task:", error);
+                showModal("Failed to copy task.");
+            }
+        }
+
+
+        /**
+         * Function to copy "To Do" tasks from a source project to a destination project (used in create project modal)
+         * @param {string} sourceProjectId - The ID of the project to copy tasks from.
+         * @param {string} destinationProjectId - The ID of the project to copy tasks to.
+         */
+        async function copyTodoTasks(sourceProjectId, destinationProjectId) {
+            try {
+                const sourceTasksCollectionRef = collection(db, `artifacts/${appId}/public/data/projects/${sourceProjectId}/tasks`);
+                const sourceTasksSnapshot = await getDocs(sourceTasksCollectionRef);
+                
+                const todoTasksToCopy = sourceTasksSnapshot.docs
+                    .filter(doc => doc.data().status === 'todo')
+                    .map(doc => {
+                        const taskData = doc.data();
+                        return {
+                            text: taskData.text,
+                            status: 'todo',
+                            createdAt: new Date().toISOString(),
+                            position: Date.now() + Math.random(),
+                            deadline: taskData.deadline || null,
+                            subtasks: taskData.subtasks.map(sub => ({
+                                text: sub.text,
+                                isCompleted: false,
+                                note: sub.note || '',
+                                color: sub.color || 'default', 
+                                position: sub.position || Date.now() + Math.random(),
+                                reactions: [] // Ensure copied subtasks start with no reactions
+                            })),
+                            comments: [],
+                            notes: [] 
+                        };
+                    });
+
+                const destinationTasksCollectionRef = collection(db, `artifacts/${appId}/public/data/projects/${destinationProjectId}/tasks`);
+                const addTasksPromises = todoTasksToCopy.map(task => addDoc(destinationTasksCollectionRef, task));
+                
+                await Promise.all(addTasksPromises);
+                console.log(`Copied ${todoTasksToCopy.length} 'To Do' tasks from ${sourceProjectId} to ${destinationProjectId}`);
+            } catch (error) {
+                console.error("Error copying tasks:", error);
+                showModal("Failed to copy 'To Do' tasks.");
+            }
+        }
+
+
+        cancelCreateProjectBtn.addEventListener('click', () => {
+            createProjectModal.classList.add('hidden');
+        });
+
+        projectSelect.addEventListener('change', (e) => {
+            currentProjectId = e.target.value;
+            if (currentProjectId) {
+                setupRealtimeListener(currentProjectId);
+                displayProjectDetails(projectsData[currentProjectId]);
+            } else {
+                if (unsubscribeFromTasks) unsubscribeFromTasks();
+                renderTasks();
+                displayProjectDetails(null);
+            }
+        });
+
+        /**
+         * Displays details of the currently selected project.
+         * @param {Object} project - The project object to display. If null, details will be hidden.
+         */
+        function displayProjectDetails(project) {
+            if (project) {
+                displayProjectName.textContent = project.name;
+                displayProjectDescription.textContent = project.description || 'No description.';
+                displayProjectStartDate.textContent = project.startDate ? new Date(project.startDate).toLocaleDateString('en-US') : 'Not set';
+                displayProjectEndDate.textContent = project.endDate ? new Date(project.endDate).toLocaleDateString('en-US') : 'Not set';
+                displayProjectStatus.textContent = project.status || 'Active';
+
+                currentProjectMembers = project.members || [];
+                const membersDisplay = currentProjectMembers.length > 0 ? currentProjectMembers.map(getNickname).join(', ') : 'No members yet.'; 
+                displayProjectMembers.textContent = membersDisplay;
+
+                currentProjectDetailsDiv.classList.remove('hidden');
+                burndownChartSection.classList.remove('hidden');
+
+                const canModifyProject = isCurrentUserAdmin;
+                editProjectBtn.classList.toggle('hidden', !canModifyProject);
+                manageMembersBtn.classList.toggle('hidden', !canModifyProject);
+                deleteProjectBtn.classList.toggle('hidden', !canModifyProject);
+
+                // Start countdown if end date is available
+                if (project.endDate) {
+                    startCountdown(project.endDate);
+                } else {
+                    if (countdownInterval) {
+                        clearInterval(countdownInterval);
+                        countdownInterval = null;
+                    }
+                    countdownTimer.classList.add('hidden');
+                }
+
+            } else {
+                currentProjectDetailsDiv.classList.add('hidden');
+                currentProjectMembers = [];
+                burndownChartSection.classList.add('hidden');
+                editProjectBtn.classList.add('hidden');
+                manageMembersBtn.classList.add('hidden');
+                deleteProjectBtn.classList.add('hidden');
+                if (countdownInterval) {
+                    clearInterval(countdownInterval);
+                    countdownInterval = null;
+                }
+                countdownTimer.classList.add('hidden');
+            }
+        }
+
+        /**
+         * Calculates data for the Burndown Chart.
+         * @param {Array<Object>} tasks - Array of project tasks.
+         * @param {string} startDateStr - Project start date (ISO string YYYY-MM-DD).
+         * @param {string} endDateStr - Project end date (ISO string YYYY-MM-DD).
+         * @returns {Object} Chart data with labels, idealData, actualData.
+         */
+        function calculateBurndownData(tasks, startDateStr, endDateStr) {
+            const startDate = new Date(startDateStr);
+            const endDate = new Date(endDateStr);
+
+            endDate.setHours(23, 59, 59, 999); 
+
+            const labels = [];
+            const idealBurndown = [];
+            const actualBurndown = [];
+
+            let currentDate = new Date(startDate);
+            currentDate.setHours(0, 0, 0, 0);
+
+            const initialTotalTasks = tasks.filter(task => 
+                task.createdAt && new Date(task.createdAt) <= endDate
+            ).length;
+
+            const totalDays = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+
+            for (let i = 0; currentDate <= endDate; i++) {
+                labels.push(currentDate.toLocaleDateString('en-US'));
+
+                const idealRemaining = initialTotalTasks - (initialTotalTasks / (totalDays - 1)) * i;
+                idealBurndown.push(Math.max(0, idealRemaining));
+
+                let tasksRemainingActual = initialTotalTasks;
+                tasks.forEach(task => {
+                    const taskCreatedAt = new Date(task.createdAt);
+                    taskCreatedAt.setHours(0, 0, 0, 0);
+
+                    if (taskCreatedAt <= currentDate) {
+                        if (task.status === 'done' && task.completedAt) {
+                            const taskCompletedAt = new Date(task.completedAt);
+                            taskCompletedAt.setHours(23, 59, 59, 999);
+
+                            if (taskCompletedAt <= currentDate) {
+                                tasksRemainingActual--;
+                            }
+                        }
+                    }
+                });
+                actualBurndown.push(Math.max(0, tasksRemainingActual));
+
+                currentDate.setDate(currentDate.getDate() + 1);
+            }
+            
+            if (idealBurndown.length > 0) {
+                idealBurndown[idealBurndown.length - 1] = 0;
+            }
+
+            return { labels, idealBurndown, actualBurndown };
+        }
+
+
+        /**
+         * Renders or updates the Burndown Chart.
+         * @param {Object} burndownData - The calculated data for the chart.
+         */
+        function renderBurndownChart(burndownData) {
+            const ctx = document.getElementById('burndownChart').getContext('2d');
+
+            if (burndownChartInstance) {
+                burndownChartInstance.destroy();
+            }
+
+            burndownChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: burndownData.labels,
+                    datasets: [
+                        {
+                            label: 'Ideal Burndown',
+                            data: burndownData.idealBurndown,
+                            borderColor: 'rgb(75, 192, 192)',
+                            tension: 0.1,
+                            fill: false,
+                            borderDash: [5, 5]
+                        },
+                        {
+                            label: 'Actual Burndown',
+                            data: burndownData.actualBurndown,
+                            borderColor: 'rgb(255, 99, 132)',
+                            tension: 0.1,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: false,
+                            text: 'Project Burndown Chart'
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'category',
+                            title: {
+                                display: true,
+                                text: 'Date'
+                            },
+                            grid: {
+                                display: false
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Tasks Remaining'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        /**
+         * Starts the countdown timer to the specified end date.
+         * @param {string} endDateStr - The end date string (YYYY-MM-DD).
+         */
+        function startCountdown(endDateStr) {
+            if (countdownInterval) {
+                clearInterval(countdownInterval);
+            }
+
+            const endDate = new Date(endDateStr);
+            endDate.setHours(0, 0, 0, 0); // Set to start of the end date
+
+            function updateCountdown() {
+                const now = new Date();
+                now.setHours(0, 0, 0, 0); // Set to start of today
+
+                const timeLeft = endDate.getTime() - now.getTime(); // Milliseconds difference
+
+                if (timeLeft <= 0) {
+                    countdownDaysValue.textContent = "0";
+                    countdownTimer.classList.remove('hidden');
+                    clearInterval(countdownInterval);
+                } else {
+                    const days = Math.ceil(timeLeft / (1000 * 60 * 60 * 24));
+                    countdownDaysValue.textContent = days;
+                    countdownTimer.classList.remove('hidden');
+                }
+            }
+
+            updateCountdown(); // Initial call
+            countdownInterval = setInterval(updateCountdown, 1000 * 60 * 60); // Update every hour
+        }
+
+        // --- Project Member Management Logic ---
+        manageMembersBtn.addEventListener('click', () => {
+            if (!isCurrentUserAdmin) {
+                showModal("You do not have permission to manage members.");
+                return;
+            }
+            if (!currentProjectId) {
+                showModal("Please select a project to manage members.");
+                return;
+            }
+            displayMembersInModal();
+            manageMembersModal.classList.remove('hidden');
+            newMemberIdInput.focus();
+        });
+
+        closeMembersModalBtn.addEventListener('click', () => {
+            manageMembersModal.classList.add('hidden');
+        });
+
+        addMemberBtn.addEventListener('click', async () => {
+            const newMemberId = newMemberIdInput.value.trim();
+            if (!newMemberId) {
+                showModal("Please enter a user ID.");
+                return;
+            }
+            if (!isCurrentUserAdmin) {
+                showModal("You do not have permission to add members.");
+                return;
+            }
+            if (!currentProjectId) {
+                showModal("Please select a project to add members to.");
+                return;
+            }
+
+            try {
+                const projectRef = doc(db, `artifacts/${appId}/public/data/projects`, currentProjectId);
+                const projectDoc = await getDoc(projectRef);
+                if (projectDoc.exists()) {
+                    const projectData = projectDoc.data();
+                    if (projectData.members && projectData.members.includes(newMemberId)) {
+                        showModal("This user is already a member of the project.");
+                        return;
+                    }
+                    await updateDoc(projectRef, {
+                        members: arrayUnion(newMemberId)
+                    });
+                    newMemberIdInput.value = '';
+                    showModal(`User ${getNickname(newMemberId)} added to project.`); 
+                }
+            } catch (error) {
+                console.error("Error adding member:", error);
+                showModal("Failed to add member.");
+            }
+        });
+
+        /**
+         * Displays the list of members in the manage members modal.
+         */
+        function displayMembersInModal() {
+            currentMembersList.innerHTML = '';
+            const project = projectsData[currentProjectId];
+            const projectMembers = (project && project.members) ? project.members : [];
+
+            if (projectMembers.length === 0) {
+                currentMembersList.textContent = 'No members in this project yet.';
+                return;
+            }
+            projectMembers.forEach(memberId => {
+                const memberItem = document.createElement('div');
+                memberItem.className = 'flex items-center justify-between p-2 bg-white rounded-md shadow-sm mb-2';
+                
+                const memberIdSpan = document.createElement('span');
+                memberIdSpan.className = 'font-mono text-gray-700 break-all';
+                memberIdSpan.textContent = getNickname(memberId); 
+                memberItem.appendChild(memberIdSpan);
+
+                if (isCurrentUserAdmin && memberId !== userId) {
+                    const removeButton = document.createElement('button');
+                    removeButton.textContent = 'Remove';
+                    removeButton.className = 'ml-4 bg-red-500 text-white text-xs px-3 py-1 rounded hover:bg-red-600 transition';
+                    removeButton.onclick = () => removeProjectMember(currentProjectId, memberId);
+                    memberItem.appendChild(removeButton);
+                } else if (memberId === userId) {
+                    const selfTag = document.createElement('span');
+                    selfTag.textContent = '(You)';
+                    selfTag.className = 'ml-2 text-gray-400 text-xs italic';
+                    memberIdSpan.appendChild(selfTag);
+                }
+                currentMembersList.appendChild(memberItem);
+            });
+        }
+
+        /**
+         * Removes a member from the project.
+         * @param {string} projectId - The ID of the project.
+         * @param {string} memberIdToRemove - The ID of the member to remove.
+         */
+        async function removeProjectMember(projectId, memberIdToRemove) {
+            if (!isCurrentUserAdmin) {
+                showModal("You do not have permission to remove members.");
+                return;
+            }
+            if (memberIdToRemove === userId) {
+                showModal("You cannot remove yourself from the project through this interface.");
+                return;
+            }
+            try {
+                const projectRef = doc(db, `artifacts/${appId}/public/data/projects`, projectId);
+                await updateDoc(projectRef, {
+                    members: arrayRemove(memberIdToRemove)
+                });
+                showModal(`User ${getNickname(memberIdToRemove)} removed from project.`); 
+            } catch (error) {
+                console.error("Error removing member:", error);
+                showModal("Failed to remove member.");
+            }
+        }
+
+
+        taskForm.addEventListener('submit', handleAddTask);
+        
+        adminLoginBtn.addEventListener('click', () => {
+            const email = adminEmailInput.value.trim();
+            const password = adminPasswordInput.value.trim();
+            if (email && password) {
+                handleAdminLogin(email, password);
+            } else {
+                showModal("Please enter both email and password for login."); 
+            }
+        });
+
+        // Removed the event listener for guest login button as the button itself is removed
+        // guestLoginBtn.addEventListener('click', handleGuestLogin); 
+
+        logoutBtn.addEventListener('click', handleLogout);
+        changePasswordBtn.addEventListener('click', handleChangePassword); 
+
+        projectSelect.addEventListener('change', (e) => {
+            currentProjectId = e.target.value;
+            if (currentProjectId) {
+                setupRealtimeListener(currentProjectId);
+                displayProjectDetails(projectsData[currentProjectId]);
+            } else {
+                if (unsubscribeFromTasks) unsubscribeFromTasks();
+                renderTasks();
+                displayProjectDetails(null);
+            }
+        });
+
+        initializeFirebase();
+    </script>
+</body>
+</html>
